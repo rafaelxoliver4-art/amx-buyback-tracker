@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------
+# schedule.yaml
+#
+# Cycle 0 declares the intended cadence ONLY. Nothing here is wired up:
+# no GitHub Actions workflow exists and none may be created this cycle.
+# ---------------------------------------------------------------------------
+
+enabled: false                 # Cycle 2 flips this on
+
+run:
+  cadence: weekly
+  day_of_week: "saturday"      # after Friday's report is published
+  time_local: "09:00"
+  timezone: "America/Mexico_City"
+
+# BMV publishes each day's recompras report the same evening (~17:00-18:00
+# local). Running Saturday morning guarantees Friday's report is available.
+publication:
+  typical_time_local: "17:30"
+  timezone: "America/Mexico_City"
+
+behaviour:
+  # a run that returns zero reports raises an ALERT; it never wipes or
+  # truncates data/raw_reports.csv
+  alert_on_zero_reports: true
+  alert_on_unconfirmed_program_addition: true
+  alert_on_parse_failure: true
+  alert_on_unexpected_serie: true
+  alert_on_integrity_mismatch: true

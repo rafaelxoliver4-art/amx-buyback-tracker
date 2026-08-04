@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# The owner's known-correct 2026 table. This is the acceptance fixture for
+# verify_backfill.py - the scraped PDFs must reproduce it.
+#
+# The DATES come from the owner's table and may be off by a few days from the
+# actual BMV report dates (e.g. 30-May-2026 is a Saturday and no report exists
+# for it). A date difference is REPORTED, not a failure. A VALUE difference IS
+# a failure.
+# ---------------------------------------------------------------------------
+
+tolerance:
+  remanente_mxn: 0            # to the peso
+  buyback_mxn: 0              # to the peso
+  shares_outstanding: 0       # to the share
+  shares_bought: 0            # to the share
+  avg_price: 0.005            # to 2dp
+  ytd_avg_price: 0.0005       # to 3dp
+
+rows:
+  - date: 2026-01-30
+    remanente_presente: 12543444084
+    buyback_mxn: 446646418
+    shares_outstanding: 60238900000
+    shares_bought: 24600000
+    avg_price: 18.16
+  - date: 2026-02-27
+    remanente_presente: 12260440289
+    buyback_mxn: 283003795
+    shares_outstanding: 60225240000
+    shares_bought: 13660000
+    avg_price: 20.72
+  - date: 2026-03-31
+    remanente_presente: 11610612670
+    buyback_mxn: 649827619
+    shares_outstanding: 60195000000
+    shares_bought: 30240000
+    avg_price: 21.49
+  - date: 2026-04-30
+    remanente_presente: 20712001283
+    buyback_mxn: 898611387
+    shares_outstanding: 60155500000
+    shares_bought: 39500000
+    avg_price: 22.75
+    note: "+10.0bn programme addition"
+  - date: 2026-05-30
+    remanente_presente: 19104076232
+    buyback_mxn: 1607925051
+    shares_outstanding: 60084650000
+    shares_bought: 70850000
+    avg_price: 22.69
+  - date: 2026-06-30
+    remanente_presente: 18421840256
+    buyback_mxn: 682235976
+    shares_outstanding: 60054500000
+    shares_bought: 30150000
+    avg_price: 22.63
+  - date: 2026-07-31
+    remanente_presente: 17040109597
+    buyback_mxn: 1381730659
+    shares_outstanding: 59993000000
+    shares_bought: 61500000
+    avg_price: 22.47
+
+anchor:
+  date: 2025-12-31
+  remanente_presente: 12990090502
+  shares_outstanding: 60263500000
+
+ytd_total:
+  buyback_mxn: 5949980905
+  shares_bought: 270500000
+  avg_price: 21.996

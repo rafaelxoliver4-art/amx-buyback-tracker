@@ -1,0 +1,39 @@
+# ---------------------------------------------------------------------------
+# program_additions.yaml
+#
+# AMX's "remanente de recursos" is the unspent balance of the board/AGM
+# approved share-buyback programme. It falls as shares are repurchased, and
+# JUMPS UP when the programme is topped up. Without recording the top-up, the
+# derivation
+#       buyback_mxn = remanente_prior + program_addition - remanente_current
+# produces a NEGATIVE buyback for that period.
+#
+# Top-ups are round numbers (10.0bn / 15.0bn) approved at the AGM. The daily
+# recompras PDF does NOT state the programme size or the AGM resolution, so
+# additions cannot be read off the source - they must live here.
+#
+# build_series.py will NEVER silently absorb a remanente rise. If it finds one
+# whose date is absent from this file it downloads the daily reports of that
+# week to isolate the exact day, appends a proposal here with
+# confirmed_by_owner: false, and raises an ALERT in the run log.
+#
+# HOW THE EXACT DAY AND AMOUNT ARE ISOLATED
+# Within a single report, "al ultimo reporte" -> "al presente" is pure
+# buyback. A top-up therefore appears in the SEAM BETWEEN two reports: it is
+# yesterday's "al presente" versus today's "al ultimo reporte".
+# ---------------------------------------------------------------------------
+
+additions:
+  # Seeded by the Architect at 2026-04-30 (monthly granularity, amount only
+  # inferred). The daily probe then isolated it exactly:
+  #   22-Apr report, al presente : 11,042,617,352
+  #   23-Apr report, al ultimo   : 21,042,617,352
+  # a seam of exactly +10,000,000,000 MXN. No rounding was required.
+  # Date corrected 2026-04-30 -> 2026-04-23 on 2026-08-03; amount unchanged.
+  # Both dates give the same MONTHLY answer (both fall inside April); only
+  # 2026-04-23 gives the correct WEEKLY answer.
+  # STILL UNCONFIRMED: no AGM resolution has been sighted for this amount.
+  - date: 2026-04-23
+    amount_mxn: 10000000000
+    source: "inferred from exact seam of 10,000,000,000 MXN on 2026-04-23 (daily probe); AGM resolution not yet confirmed"
+    confirmed_by_owner: false

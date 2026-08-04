@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# email.yaml
+#
+# Cycle 0 declares the intended shape ONLY. Nothing here is wired up.
+# NO email is sent this cycle. NO credential, app password, token or secret
+# is created, stored, requested or read by this repo - not now, not ever in
+# a tracked file. The SMTP password will be a GitHub Actions secret that the
+# OWNER creates by hand in Cycle 2; it is referenced by name, never by value.
+# ---------------------------------------------------------------------------
+
+enabled: false                 # Cycle 2 flips this on
+
+smtp:
+  host: ""                     # to be filled by owner in Cycle 2
+  port: 587
+  starttls: true
+  username: ""                 # to be filled by owner in Cycle 2
+  # The password is NEVER stored here. It is read at run time from the
+  # environment variable below, which GitHub Actions populates from a secret
+  # the owner creates themselves.
+  password_env_var: "AMX_SMTP_PASSWORD"
+
+message:
+  from_address: ""             # to be filled by owner in Cycle 2
+  to_addresses: []             # to be filled by owner in Cycle 2
+  subject_template: "AMX buybacks - week ending {week_ending}"
+  attach_workbook: true
+
+# Cycle 1 builds the chart and the HTML body. Not this cycle.
+body:
+  include_chart: false
+  include_weekly_table: false
+  include_ytd_summary: false

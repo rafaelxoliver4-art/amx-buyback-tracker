@@ -1,0 +1,9 @@
+# Light dependencies only. Anything heavier needs an explicit YES from the owner.
+requests>=2.31
+pdfplumber>=0.11
+PyYAML>=6.0
+pandas>=2.0
+openpyxl>=3.1
+
+# tests
+pytest>=8.0

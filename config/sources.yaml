@@ -1,0 +1,164 @@
+# ---------------------------------------------------------------------------
+# sources.yaml - every URL, selector, delay, retry count and date rule.
+# No URL, selector, delay or date rule may be hardcoded in Python.
+# ---------------------------------------------------------------------------
+
+issuer:
+  clave: AMX
+  # BMV internal issuer id. Discovered via the issuer-search endpoint, NOT
+  # guessable: the clave in the profile URL is decorative and ignored by BMV.
+  id_emisora: 6024
+  tipo_mercado: CGEN_CAPIT      # capitales (local equity)
+  razon_social: "AMERICA MOVIL, S.A.B. DE C.V."
+  expected_series: ["B"]        # anything else is an ALERT, not a silent pass
+
+http:
+  base_url: "https://www.bmv.com.mx"
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+  accept_language: "es-MX,es;q=0.9,en;q=0.8"
+  timeout_seconds: 90
+  delay_seconds: 2.0            # minimum gap between any two requests
+  max_retries: 3
+  backoff_base_seconds: 4.0     # 4s, 8s, 16s
+  backoff_max_seconds: 120.0
+  retry_on_status: [429, 500, 502, 503, 504]
+
+robots:
+  url: "https://www.bmv.com.mx/robots.txt"
+  # Checked 2026-08-03: 404 on both www.bmv.com.mx and bmv.com.mx.
+  # No robots.txt exists, therefore nothing is disallowed.
+  # If this ever returns 200, honour_disallow makes the fetcher stop.
+  honour_disallow: true
+
+listing:
+  # A single GET returns EVERY row. The page is server-rendered and the ~251
+  # "pages" the user sees are DataTables client-side pagination (5 rows/page).
+  # Note BMV's own typo in the path: "informcioncorporativa".
+  url_template: "{base_url}/es/emisoras/informcioncorporativa/{clave}-{id_emisora}-{tipo_mercado}"
+  # The page holds several accordion sections; we want only this one.
+  section_heading: "ADQUISICION DE ACCIONES POR EMISORA (RECOMPRAS)"
+  asunto_expected: "Recompras"
+  cell_index_fecha_hora: 0
+  cell_index_asunto: 1
+  cell_index_archivo: 2
+  fecha_hora_format: "%d-%m-%Y %H:%M"
+  link_href_prefix: "/docs-pub/recompra/"
+  # doc id is an opaque incrementing EMISNET document id - NOT date-derivable.
+  pdf_filename_regex: "recompra_(?P<doc_id>\\d+)_(?P<seq>\\d+)\\.pdf"
+
+# --- which reports we actually download -----------------------------------
+selection:
+  inventory_start: "2026-01-01"     # inventory is walked from here...
+  inventory_end: "today"            # ...to here ("today" = run date)
+  rules:
+    last_of_iso_week: true
+    last_of_calendar_month: true
+  # explicit extra reports (the prior-year anchor row)
+  anchor_reports:
+    - month: "2025-12"              # last report of Dec-2025
+  raw_pdf_filename_template: "{report_date}_{serie}.pdf"
+
+# --- PDF parsing ----------------------------------------------------------
+parse:
+  # Labels are matched case-insensitively with accents folded.
+  header_labels:
+    clave_cotizacion: "CLAVE DE COTIZACION"
+    razon_social: "RAZON SOCIAL"
+    fecha_operacion: "FECHA DE OPERACION"
+    fecha_documento: "FECHA:"
+  remanente:
+    section: "REMANENTE DE RECURSOS"
+    row_ultimo: "Al ultimo reporte"
+    row_presente: "Al presente"
+  saldos:
+    section: "SALDOS"
+    row_ultimo: "Al ultimo reporte"
+    row_presente: "Al presente reporte"
+    columns:
+      acciones_tesoreria: "Acciones en Tesoreria"
+      acciones_circulacion: "Acciones en Circulacion"
+      acciones_cargo_cc: "Acciones con Cargo C.C."
+  serie:
+    block_heading: "OPERACION POR SERIE"
+    serie_label: "SERIE"
+    casa_de_bolsa_label: "CASA DE BOLSA"
+  operaciones:
+    section: "OPERACIONES"
+    comentarios_label: "COMENTARIOS:"
+  geometry:
+    # chars whose |top| differ by less than this are on the same text line
+    line_tolerance_pt: 2.0
+    # a char joins the current run when its x0 is within this of the
+    # previous char's x1. BMV renders some cells TWICE, overlapping; each
+    # render is internally x-contiguous, so this cleanly separates them.
+    run_join_tolerance_pt: 0.6
+    # a numeric run must overlap its column header band by at least this much
+    column_overlap_min_pt: 4.0
+  # How to resolve a cell that contains two overlapping renders.
+  overlap_resolution:
+    # 1st: pick the candidate satisfying treasury/circulation conservation
+    #      (delta tesoreria == -delta circulacion).
+    use_conservation_identity: true
+    # 2nd: fall back to the candidate x0-aligned with the unambiguous row.
+    use_x_alignment_fallback: true
+    # if neither resolves it, the report is logged unparsed - never guessed.
+
+# --- derived series -------------------------------------------------------
+series:
+  # buyback_mxn   = remanente_prior + program_addition - remanente_current
+  # shares_bought = shares_outstanding_prior - shares_outstanding_current
+  # avg_price     = buyback_mxn / shares_bought
+  # pct_outstand. = shares_bought / shares_outstanding_current
+  week_rule: "iso"                  # ISO week, row = last report in the week
+  month_rule: "calendar"            # row = last report in the calendar month
+  addition_round_to_mxn: 500000000  # propose additions to the nearest 0.5bn
+  # when an unexplained remanente rise is found, download this many daily
+  # reports around it to isolate the exact day
+  jump_probe_days_before: 7
+  jump_probe_days_after: 1
+
+# --- workbook -------------------------------------------------------------
+workbook:
+  path: "output/AMX_Buybacks.xlsx"
+  sheets:
+    raw: "Raw"
+    weekly: "Weekly"
+    monthly: "Monthly"
+    ytd: "YTD"
+  monthly_columns:
+    # A-F EXACTLY as the owner's format, in this order and wording.
+    - {key: date,                header: "Date",                        number_format: "dd-mmm-yyyy"}
+    - {key: remanente,           header: "Remaining Resources (MXN)",   number_format: "#,##0"}
+    - {key: buyback_mxn,         header: "Buybacks (MXN mn)",           number_format: "#,##0,,"}
+    - {key: shares_outstanding,  header: "Shares Outstanding",          number_format: "#,##0"}
+    - {key: shares_bought,       header: "Buybacks (# Shares)",         number_format: "#,##0"}
+    - {key: avg_price,           header: "Avg. Buyback Price (MXN)",    number_format: "#,##0.00"}
+    # extras from column G onward
+    - {key: program_addition,    header: "Program Addition (MXN)",      number_format: "#,##0"}
+    - {key: pct_outstanding,     header: "% Shares Outstanding",        number_format: "0.00%"}
+    - {key: source_report_date,  header: "Source Report Date",          number_format: "dd-mmm-yyyy"}
+    - {key: pdf_url,             header: "Source PDF URL",              number_format: "General"}
+
+# --- known defects in BMV's own data --------------------------------------
+# Each PDF restates the prior report's figures under "al ultimo reporte",
+# which gives a free check on the previously stored row. Where BMV itself is
+# internally inconsistent the break is recorded HERE, explicitly and dated,
+# so it stays visible - it is never absorbed by a blanket tolerance, and any
+# NEW break still fails the integrity test.
+integrity:
+  known_source_discrepancies:
+    - field: remanente
+      report_date: 2026-04-24
+      prior_report_date: 2026-04-23
+      diff_mxn: 26
+      note: >-
+        The 24-Apr report opens at 20,997,161,415 while the 23-Apr report
+        closed at 20,997,161,389. BMV's own restatement is 26 MXN higher.
+        Harmless for us: the derived series chains "al presente" to
+        "al presente" and never consumes "al ultimo". Observed 2026-08-03.
+
+paths:
+  raw_pdf_dir: "data/raw"
+  ledger_csv: "data/raw_reports.csv"
+  inventory_csv: "data/listing_inventory.csv"
+  run_log: "data/run_log.txt"

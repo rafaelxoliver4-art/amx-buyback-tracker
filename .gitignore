@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# transient run output
+data/run_log.txt
+
+# Excel lock files
+~$*.xlsx
+
+# never commit anything credential-shaped
+.env
+*.env
+secrets.*
+*.pem
+*.key
+
+# OS noise
+Thumbs.db
+.DS_Store
+
+# NOTE: data/raw/*.pdf, data/raw_reports.csv, data/listing_inventory.csv and
+# output/AMX_Buybacks.xlsx ARE committed on purpose. The PDFs are the primary
+# evidence for the backfill and the ledger is append-only history.
