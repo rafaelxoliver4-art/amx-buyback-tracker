@@ -154,6 +154,13 @@ $ python -m pytest tests -q
   integrity.known_source_discrepancies` rather than hidden behind a
   tolerance, so a *new* break still fails the test. It affects nothing: the
   series chains `al presente` to `al presente`.
+- **The acceptance test needed scoping to stay reproducible.** The
+  2026-08-03 report arrived while this cycle was running and its partial
+  August row was being summed into the YTD total, failing the check against a
+  fixed table. The YTD check is now scoped to the fixture's months; later
+  months are reported separately. The **workbook** YTD still includes
+  everything (6,122,896,708 MXN / 278,500,000 shares through 3-Aug) — only the
+  test is scoped.
 - **One PDF genuinely failed to parse at first** (2026-04-23) and was reported
   unparsed rather than guessed — exactly the intended behaviour. Cause: a
   right-aligned bare `0` in the tesorería column sat entirely outside its own
