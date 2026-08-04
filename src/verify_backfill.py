@@ -102,9 +102,17 @@ def verify(cfg: dict, log: RunLog) -> int:
               f"{_fmt(row['avg_price'], True):>9}  {'PASS' if all(oks) else 'FAIL'}")
 
     # ---- YTD --------------------------------------------------------------
+    # Scope the YTD to the months the fixture covers. This is an acceptance
+    # test against a fixed known-correct table, so it must stay reproducible
+    # as new months arrive; months beyond the fixture are reported, not summed.
     y = spec["ytd_total"]
-    year = max(r["date"].year for r in monthly)
-    ytd = [r for r in monthly if r["date"].year == year and not r["is_anchor"]]
+    want_months = {(resolve_date(e["date"]).year, resolve_date(e["date"]).month) for e in spec["rows"]}
+    year = max(m[0] for m in want_months)
+    ytd = [r for r in monthly
+           if not r["is_anchor"] and (r["date"].year, r["date"].month) in want_months]
+    extra = [r for r in monthly
+             if not r["is_anchor"] and r["date"].year == year
+             and (r["date"].year, r["date"].month) not in want_months]
     tot_mxn = sum(r["buyback_mxn"] for r in ytd)
     tot_sh = sum(r["shares_bought"] for r in ytd)
     avg = tot_mxn / tot_sh if tot_sh else None
@@ -119,6 +127,12 @@ def verify(cfg: dict, log: RunLog) -> int:
     print(f"{'YTD expected':<27}{'':>20}{_fmt(y['buyback_mxn']):>17}{'':>17}"
           f"{_fmt(y['shares_bought']):>15}{y['avg_price']:>9.3f}")
     print("=" * 118)
+
+    if extra:
+        print("\nMONTHS BEYOND THE FIXTURE (excluded from the YTD check, reported only):")
+        for r in extra:
+            print(f"  {r['date']}  buyback {_fmt(r['buyback_mxn'])} MXN  "
+                  f"{_fmt(r['shares_bought'])} shares  avg {_fmt(r['avg_price'], True)}")
 
     if date_notes:
         print("\nDATE DIFFERENCES (reported, not failures):")
