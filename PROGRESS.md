@@ -5,6 +5,42 @@ the standing brief.
 
 ---
 
+## 2026-08-04 — Relocation to the canonical home
+
+The owner could not find what Cycle 0 produced. It was written to
+`C:\Users\Rafael\OneDrive\Área de Trabalho\amx-buyback-tracker` — beside the
+Desktop, not under `projects\`.
+
+**Now at:**
+
+```
+C:\Users\Rafael\OneDrive\Área de Trabalho\prompt-project-builder\projects\amx-buyback-tracker
+```
+
+- A full search of `C:\Users\Rafael` found **exactly one** copy — no strays,
+  no duplicates. `raw_reports.csv`, `AMX_Buybacks.xlsx` and
+  `pdf_field_dump.md` each existed exactly once.
+- **Moved, not copied**, `.git` included. 179 files before, 179 after; nothing
+  left behind at the old path. All three commits and the clean working tree
+  survived.
+- **No absolute path existed in any code, config or living file** — every path
+  resolves relative to the repo root from `__file__` in `src/common.py`. The
+  only file that records an absolute path is `data/run_log.txt`, which is
+  transient and gitignored. Nothing needed rewriting.
+- No venv existed to rebuild (system Python).
+- Rebuilt and re-verified at the new path: **acceptance test PASS**, 21/21
+  tests pass.
+- `projects\` remains a container only: three project folders
+  (`amx-buyback-tracker`, `Anatel-access-tracker`, `mobile-price-tracker`) and
+  no shared file of any kind.
+
+**Isolation check: clean.** Nothing was written outside the project folder in
+Cycle 0 — no wiki entry, no vault page, no memory file, no global config. The
+only artefacts elsewhere are three scraped HTML pages in the session
+scratchpad under `%TEMP%`, which are throwaway recon dumps.
+
+---
+
 ## Cycle 0 — 2026-08-03/04 — BMV recon, isolated scaffold, verified 2026 backfill
 
 ### Handed off
@@ -35,9 +71,9 @@ amx-buyback-tracker/
 │   ├── build_series.py            weekly/monthly frames + workbook
 │   └── verify_backfill.py         the acceptance test
 ├── data/
-│   ├── raw/                       38 PDFs, <report_date>_<serie>.pdf
-│   ├── raw_reports.csv            append-only ledger, 38 rows
-│   └── listing_inventory.csv      1,255 rows, full history 2021-08-03 -> 2026-07-31
+│   ├── raw/                       39 PDFs, <report_date>_<serie>.pdf
+│   ├── raw_reports.csv            append-only ledger, 39 rows
+│   └── listing_inventory.csv      1,255 rows, full history 2021-08-03 -> 2026-08-03
 ├── output/AMX_Buybacks.xlsx       Raw | Weekly | Monthly | YTD
 ├── docs/
 │   ├── recon_notes.md             robots, endpoint discovery, URL stability

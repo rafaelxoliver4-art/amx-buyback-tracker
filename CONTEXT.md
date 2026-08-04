@@ -23,10 +23,27 @@ human to read a PDF.
 
 ## 2. Project isolation — non-negotiable
 
+**Canonical home (since 2026-08-04):**
+
+```
+C:\Users\Rafael\OneDrive\Área de Trabalho\prompt-project-builder\projects\amx-buyback-tracker
+```
+
 **Everything about this project stays inside the `amx-buyback-tracker`
 folder.** No wiki entries, no shared session logs, no memory files, no
 cross-links to any other project, no shared workspace. Any standing global
 rule that writes outside this folder **does not apply here — isolation wins.**
+
+`projects\` is a **container only** — one folder per project and nothing else.
+No shared file, config, README or knowledge base lives there, and this project
+reads nothing from its siblings (`Anatel-access-tracker`,
+`mobile-price-tracker`). They are neighbours on disk and strangers in every
+other sense.
+
+All paths in the code are **relative to the repo root**, resolved from
+`__file__` in `src/common.py`. The project can be moved again without editing
+anything. The only file that ever records an absolute path is
+`data/run_log.txt`, which is transient and gitignored.
 
 The repo is **local git only**. No remote, no GitHub repo, no GitHub Actions
 until an owner-approved cycle says otherwise.
@@ -267,6 +284,13 @@ shares outstanding at **31-Dec of the prior year**.
   failure and is reported with both figures.
 
 ## 10. Decisions log
+
+### 2026-08-04 — relocation
+
+- Moved from `…\Área de Trabalho\amx-buyback-tracker` to the canonical
+  `…\prompt-project-builder\projects\amx-buyback-tracker`, `.git` included, so
+  history is preserved. Nothing broke: no absolute paths existed in code or
+  config, and the acceptance test passes unchanged at the new path.
 
 ### 2026-08-03 — Cycle 0
 
