@@ -121,16 +121,18 @@ def build_html(cfg: dict, latest: dict | None, ytd: list[list],
             return (f'<span style="font-size:12px;color:{colour};"> '
                     f'{sign}{abs(v):,}{unit}</span>')
 
-        th = ("text-align:left;padding:3px 14px 3px 0;font-size:12px;opacity:.7;"
-              "white-space:nowrap;vertical-align:baseline;")
-        tv = "text-align:right;padding:3px 0;white-space:nowrap;vertical-align:baseline;"
+        # distinct names - `th`/`td` belong to the YTD table below and must not
+        # be shadowed, or its header loses its bold and its rule
+        bl_label = ("text-align:left;padding:3px 14px 3px 0;font-size:12px;opacity:.7;"
+                    "white-space:nowrap;vertical-align:baseline;")
+        bl_value = "text-align:right;padding:3px 0;white-space:nowrap;vertical-align:baseline;"
         p.append(
             '<table style="border-collapse:collapse;margin:0 0 14px 0;">'
-            f'<tr><td style="{th}">Remaining resources (MXN)</td>'
-            f'<td style="{tv}"><b>{latest["remanente"]:,}</b>'
+            f'<tr><td style="{bl_label}">Remaining resources (MXN)</td>'
+            f'<td style="{bl_value}"><b>{latest["remanente"]:,}</b>'
             f'{_delta(latest.get("remanente_delta"))}</td></tr>'
-            f'<tr><td style="{th}">Shares outstanding</td>'
-            f'<td style="{tv}"><b>{latest["shares_outstanding"]:,}</b>'
+            f'<tr><td style="{bl_label}">Shares outstanding</td>'
+            f'<td style="{bl_value}"><b>{latest["shares_outstanding"]:,}</b>'
             f'{_delta(latest.get("shares_delta"))}</td></tr>'
             '</table>'
         )

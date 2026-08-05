@@ -240,6 +240,35 @@ def test_email_config_holds_no_credential_values():
     assert ECFG["to"] == "rafaelxoliver4@gmail.com"
 
 
+def test_email_leads_with_the_two_primary_source_figures():
+    """The email must show the INPUTS (remanente, shares outstanding) and the
+    report they come from, above the derived headline."""
+    preview = REPO_ROOT / "output" / "email_preview.html"
+    if not preview.exists():
+        pytest.skip("no preview; run send_email.py --dry-run")
+    h = preview.read_text(encoding="utf-8")
+    order = [h.find(s) for s in ("as reported in the", "Remaining resources",
+                                 "Shares outstanding", "AMX bought back",
+                                 "<img", "YTD (", "routine notice")]
+    assert all(i >= 0 for i in order), f"a section is missing: {order}"
+    assert order == sorted(order), "email sections are out of order"
+    assert "docs-pub/recompra/" in h, "no link to the source PDF"
+
+
+def test_ytd_header_keeps_its_own_style():
+    """Regression: a local variable in the balances block once shadowed the
+    YTD table's header style and silently un-bolded it."""
+    preview = REPO_ROOT / "output" / "email_preview.html"
+    if not preview.exists():
+        pytest.skip("no preview")
+    h = preview.read_text(encoding="utf-8")
+    month_th = re.search(r'<th style="([^"]*)">Month</th>', h)
+    assert month_th, "no YTD header row"
+    style = month_th.group(1)
+    assert "font-weight:bold" in style, "YTD header lost its bold"
+    assert "border-bottom" in style, "YTD header lost its rule"
+
+
 def test_chart_is_embedded_by_cid_not_linked():
     """A linked image will not render in Gmail from a private repo."""
     assert ECFG["body"]["chart_cid"]
