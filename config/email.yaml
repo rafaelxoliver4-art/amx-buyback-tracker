@@ -1,33 +1,49 @@
 # ---------------------------------------------------------------------------
-# email.yaml
+# email.yaml - the whole email shape. NO CREDENTIALS, EVER.
 #
-# Cycle 0 declares the intended shape ONLY. Nothing here is wired up.
-# NO email is sent this cycle. NO credential, app password, token or secret
-# is created, stored, requested or read by this repo - not now, not ever in
-# a tracked file. The SMTP password will be a GitHub Actions secret that the
-# OWNER creates by hand in Cycle 2; it is referenced by name, never by value.
+# Two names appear below - FROM_EMAIL and EMAIL_APP_PASSWORD. They are the
+# NAMES of a GitHub Actions variable and secret that the OWNER creates by
+# hand. Their VALUES are never stored here, never defaulted in Python, never
+# logged, and never printed. src/send_email.py reads them from the
+# ENVIRONMENT and from nowhere else; if either is absent it refuses to send.
+#
+# The SMTP host and port are NOT credentials and live here, per the standing
+# "config over code" rule - no address or host literal belongs in Python.
 # ---------------------------------------------------------------------------
 
-enabled: false                 # Cycle 2 flips this on
+enabled: true
+
+to: rafaelxoliver4@gmail.com
+
+# --- names only, never values ---------------------------------------------
+from_env: FROM_EMAIL              # Actions VARIABLE  -> ibotatom@gmail.com
+password_env: EMAIL_APP_PASSWORD  # Actions SECRET    -> a Gmail app password
 
 smtp:
-  host: ""                     # to be filled by owner in Cycle 2
+  host: smtp.gmail.com
   port: 587
   starttls: true
-  username: ""                 # to be filled by owner in Cycle 2
-  # The password is NEVER stored here. It is read at run time from the
-  # environment variable below, which GitHub Actions populates from a secret
-  # the owner creates themselves.
-  password_env_var: "AMX_SMTP_PASSWORD"
 
-message:
-  from_address: ""             # to be filled by owner in Cycle 2
-  to_addresses: []             # to be filled by owner in Cycle 2
-  subject_template: "AMX buybacks - week ending {week_ending}"
-  attach_workbook: true
+subject:
+  normal: "AMX buybacks — week to {report_date}"
+  alert: "[ALERT] AMX buybacks — week to {report_date}"
 
-# Cycle 1 builds the chart and the HTML body. Not this cycle.
+attach:
+  - output/AMX_Buybacks.xlsx
+  - output/amx_buybacks_chart.png
+
 body:
-  include_chart: false
-  include_weekly_table: false
-  include_ytd_summary: false
+  # The chart is embedded BY CID, not linked. Gmail does not render a linked
+  # image from a private repo - the reader is not authenticated to it - so a
+  # linked chart would arrive as a broken image every week.
+  chart_cid: amx-buyback-chart
+  chart_path: output/amx_buybacks_chart.png
+  ytd_sheet: YTD
+  # Ruling 5: the five unconfirmed programme additions emit one INFO each,
+  # every week, BY DESIGN. That is the correct resting state, not a defect.
+  # They render as a quiet footnote; only ALERTs get the prominent block.
+  quiet_notice_severities: ["INFO"]
+  loud_notice_severities: ["ALERT"]
+  no_new_reports_text: >-
+    No new BMV reports were published this week. The figures below are
+    unchanged from last week's run.

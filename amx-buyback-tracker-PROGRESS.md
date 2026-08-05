@@ -14,12 +14,26 @@ standing brief.
 
 | | |
 |---|---|
-| Cycles complete | **0** (recon + scaffold), **1** (backfill, styling, chart), **2** (the nine rulings) |
+| Cycles complete | **0** (recon + scaffold), **1** (backfill, styling, chart), **2** (the nine rulings + first push), **3** (Actions + email, built not live) |
 | Ledger | **536 rows**, append-only, serie B from 2023-03-17 |
-| PDFs held | 331, all parsed, **0 unparsed** |
+| PDFs held | 342, all parsed, **0 unparsed** |
 | Acceptance test | **2026 fixture PASS · full-history fixture PASS (32/32 rows)** |
-| Test suite | **56 passed** |
-| Deliverables | `output/AMX_Buybacks.xlsx` (6 sheets), `output/amx_buybacks_chart.png` |
+| Test suite | **70 passed** |
+| Deliverables | `output/AMX_Buybacks.xlsx` (6 sheets), `output/amx_buybacks_chart.png`, `output/email_preview.html` |
+
+### ⚠ BLOCKED — two settings only the owner can create
+
+The weekly Action and the email are **built, tested and committed, but NOT
+pushed and NOT live.** Neither GitHub setting they need exists (verified via
+the API: both `total_count: 0`):
+
+| Create in repo Settings → Secrets and variables → Actions | Kind | Name | Value |
+|---|---|---|---|
+| **Secrets** tab | secret | `EMAIL_APP_PASSWORD` | a Gmail **app password** |
+| **Variables** tab | variable | `FROM_EMAIL` | `ibotatom@gmail.com` |
+
+Pushing first would schedule a job that fetches, verifies and commits fine and
+then **fails at the email step every Saturday**. Held back deliberately.
 
 ### Published
 
@@ -35,9 +49,9 @@ secret** — all verified absent on the remote. No token, password or SSH key
 was ever requested, created, read or stored; the owner authenticated `gh`
 themselves.
 
-### THE NINE RULINGS — settled 2026-08-05
+### THE NINE RULINGS — all settled
 
-Seven implemented, two still open. Full text and rationale in CONTEXT §10.
+Full text and rationale in CONTEXT §11.
 
 | # | Ruling | Status |
 |---|---|---|
@@ -45,17 +59,140 @@ Seven implemented, two still open. Full text and rationale in CONTEXT §10.
 | 2 | Revisit trigger corrected to **seam measurability** | **Done** |
 | 3 | Row-count guard **ratcheted** to a high-water mark | **Done** |
 | 4 | **Ship the scraped figures**; the owner's 11 declared errors stand | **Standing policy** |
-| 5 | Confirming the five programme additions | **OPEN — no ruling stated** |
-| 6 | Whether the 2023-03-17 series-B floor is permanent | **OPEN — no ruling stated** |
+| 5 | The five additions are confirmed **by hand**; no AGM scraper | **Settled** |
+| 6 | 2023-03-17 is a **permanent** floor for the derived series | **Settled** |
 | 7 | PDFs **stay committed**, 100 MB revisit (reverses the gitignore decision) | **Done** |
 | 8 | Programme-**reduction** guard, band calibrated from observed data | **Done** |
 | 9 | Chart labels thinned beyond 24 points, extremes kept | **Done** |
 
-**Two reversals**, both recorded explicitly in CONTEXT §10: the full backfill
+**Two reversals**, both recorded explicitly in CONTEXT §11: the full backfill
 stands, and the PDFs stay committed.
 
 **Nothing moved.** Both acceptance fixtures are byte-identical to Cycle 1 and
 every workbook cell is unchanged.
+
+---
+
+## Cycle 3 — 2026-08-05 — the weekly Action and the email (built, NOT live)
+
+### Handed off
+
+Make the tracker run itself weekly on GitHub and email the owner the refreshed
+workbook, chart and YTD table. After this cycle the remote is the live copy.
+
+### What came back
+
+**Status: everything buildable is built, tested and committed. NOTHING WAS
+PUSHED and no run was triggered — two of the three pre-reqs are missing.**
+
+#### The pre-req check stopped the cycle short
+
+| Pre-req | Result |
+|---|---|
+| Repo exists, private, history pushed | ✅ 10 commits, `isPrivate: true` |
+| Secret `EMAIL_APP_PASSWORD` exists | ❌ **missing** — `actions/secrets` returns `total_count: 0` |
+| Variable `FROM_EMAIL` = ibotatom@gmail.com | ❌ **missing** — `actions/variables` returns `total_count: 0` |
+
+Not a permissions artefact: the token carries `repo` and `workflow` scope, so
+it can read secret *metadata* (names, never values). They genuinely do not
+exist. Existence was all that was checked — no attempt was made to read a
+value, and none can be.
+
+**So the workflow was not pushed.** Pushing it would have put a job on the
+Saturday schedule that fetches, verifies and commits correctly and then
+**fails at the email step every week**. Everything else was built, because
+none of it needs a credential — the dry run is designed to work without one.
+
+#### What was built
+
+- **`config/email.yaml`** — the whole email shape. Recipient, SMTP host/port,
+  both subject templates, attachments, and the two env **names**. No value,
+  no password, no default.
+- **`config/schedule.yaml`** — `enabled: true`, `cron: "0 12 * * 6"`, with the
+  timezone reasoning written out: GitHub cron is UTC; BMV files ~17:30 Mexico
+  City (UTC-6 year round, no DST since 2022), so Friday's report is public by
+  ~23:30 UTC Friday, and Saturday noon UTC is ~12.5 h later — 09:00 in São
+  Paulo.
+- **`src/send_email.py`** — HTML body in the required order: headline, chart
+  **embedded by CID**, YTD table read straight from the workbook's YTD sheet,
+  then ALERTs prominent and INFO quiet. `--dry-run` writes
+  `output/email_preview.html` and works with no credentials at all.
+- **`.github/workflows/weekly.yml`** — schedule + `workflow_dispatch`,
+  `contents: write`, a concurrency group, and the gate.
+- **`tests/test_workflow.py`** — 14 new tests (70 total).
+
+#### The gate
+
+`fetch → parse → build → VERIFY → commit → email`, and **only verify can stop
+the job.** If either fixture fails: no commit, no email, non-zero exit, and
+GitHub's failed-run notification is the alarm.
+
+`fetch`, `parse` and `build` are `continue-on-error` **on purpose**. They exit
+non-zero when they raise an ALERT, and an ALERT is a data condition the owner
+must *see* — not a reason to kill the job and send nothing. A non-success
+outcome is injected into the email as a prominent ALERT via a new `--notice`
+flag, which exists because `send_email.py` builds its own fresh run log and
+cannot otherwise see what earlier steps did.
+
+Tests assert the gate is not `continue-on-error`, and that both the commit and
+the email come *after* it.
+
+#### Credential hygiene
+
+The password is read from the environment only — no config value, no default,
+no literal. The SMTP call reports the exception **class and nothing else**,
+because `smtplib` puts the server's reply into the exception args and a reply
+can quote the credential it rejected.
+
+**The test that matters** drives a failing login against a fake server that
+echoes the password back, then asserts the secret reaches **neither stdout,
+stderr, the run log on disk, nor the alert list** — and that the failure is
+still reported. Another test greps every file in `src/` for an address or SMTP
+host literal.
+
+#### The dry run (step 5a)
+
+Ran with **no credentials in the environment**. Produced
+`output/email_preview.html`, 7,256 bytes. Verified: section order correct
+(headline → chart → YTD → alerts → notices → footer), headline reads *"AMX
+bought back MXN 173 mn · 8.0 mn shares · average MXN 21.61"*, the YTD table
+matches the workbook row for row including the TOTAL, **no ALERT block** (a
+clean run), and the **five ruling-5 notices render as a quiet footnote**
+exactly as intended. No credential-shaped string anywhere in it.
+
+#### Steps 5b–5d NOT done
+
+The manual `workflow_dispatch` run, the run-log inspection and the
+Action-pushed commit all require the workflow to be live, which requires the
+two settings. **No run URL, no Action commit, and no runner-vs-local
+comparison can be reported this cycle** — including whether BMV rate-limits a
+datacentre IP, which is genuinely unknown until a real runner tries it.
+
+#### The 60-day question — researched, and the honest answer is "undocumented"
+
+- The rule **applies here.** GitHub's docs say *"In a public repository…"*, but
+  the community reports it hitting private repos too and the docs state no
+  exemption. Assume it applies.
+- **Only new commits** reset the timer — not tags, releases, issues or PRs.
+- **Whether a `github-actions[bot]` commit via `GITHUB_TOKEN` resets it is not
+  documented by GitHub**, and the community threads asking got no staff
+  answer. Unresolved, not merely unread.
+
+**Do not add a dummy-commit keepalive**: the most popular tool for it,
+`gautamkrishnar/keepalive-workflow`, has been **disabled by GitHub Staff for a
+ToS violation**. Manufacturing activity to game the timer is not safe.
+
+GitHub emails a warning before disabling and re-enabling is one click — so the
+practical answer is: **if the weekly email ever stops arriving, check the
+Actions tab first.** If bot commits turn out not to count, the clean fix is
+pushing with a fine-grained PAT, which needs a new owner-created secret and is
+not approved.
+
+### Next
+
+Owner creates the two settings; then push the workflow, trigger one manual
+run, and confirm the log is clean and free of the secret. Cycle 3 is otherwise
+complete.
 
 ---
 
@@ -167,7 +304,7 @@ rewritten, so the existing copy stays in past commits.
 
 #### Rulings 2, 4, 5, 6
 
-- **2 — the revisit trigger was wrong**, and is corrected in CONTEXT §10.
+- **2 — the revisit trigger was wrong**, and is corrected in CONTEXT §11.
   "Revisit if additions stop being round" was *already false when written*:
   2023-04-14 is 1,586,249,981, a reset to a round total rather than a round
   increment, and three other seams carry a few pesos of drift. Taken literally
@@ -779,7 +916,7 @@ file.
 
 ### Open questions for the Architect
 
-> **ALL SIX ARE ANSWERED — see the 2026-08-04 rulings in CONTEXT §10.** Kept
+> **ALL SIX ARE ANSWERED — see the 2026-08-04 rulings in CONTEXT §11.** Kept
 > here as the historical record of what Cycle 0 asked. **The text below
 > describes behaviour as it was on 2026-08-03 and is superseded in two
 > places:** question 1's "raises an ALERT on every run" became **one INFO line

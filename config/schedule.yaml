@@ -1,23 +1,39 @@
 # ---------------------------------------------------------------------------
-# schedule.yaml
+# schedule.yaml - the weekly unattended run.
 #
-# Cycle 0 declares the intended cadence ONLY. Nothing here is wired up:
-# no GitHub Actions workflow exists and none may be created this cycle.
+# The cron below is the SOURCE OF TRUTH for humans, but GitHub Actions cannot
+# read this file: the schedule has to be a literal in
+# .github/workflows/weekly.yml. The two are therefore duplicated, and a test
+# (tests/test_workflow.py) asserts they agree, so they can never drift apart.
 # ---------------------------------------------------------------------------
 
-enabled: false                 # Cycle 2 flips this on
+enabled: true
+
+cron: "0 12 * * 6"          # Saturdays 12:00 UTC
+
+# WHY SATURDAY 12:00 UTC
+#
+#   - GitHub cron is ALWAYS UTC. It does not observe any local timezone.
+#   - BMV files each day's recompras report ~17:30 in Mexico City.
+#   - Mexico City is UTC-6 year round: Mexico abolished DST in October 2022,
+#     so there is no seasonal drift to design around.
+#   - Friday's report is therefore public by ~23:30 UTC on Friday.
+#   - Saturday 12:00 UTC is ~12.5 hours later - and 09:00 in Sao Paulo, where
+#     the owner reads it. Comfortably clear of the filing, with a wide margin
+#     for a late filing or a slow BMV.
+#
+# GitHub also queues scheduled jobs under load and may start them minutes
+# late; on a 12-hour margin that is immaterial.
 
 run:
   cadence: weekly
-  day_of_week: "saturday"      # after Friday's report is published
-  time_local: "09:00"
-  timezone: "America/Mexico_City"
+  day_of_week: "saturday"
+  time_utc: "12:00"
+  owner_local_time: "09:00 America/Sao_Paulo"
 
-# BMV publishes each day's recompras report the same evening (~17:00-18:00
-# local). Running Saturday morning guarantees Friday's report is available.
 publication:
   typical_time_local: "17:30"
-  timezone: "America/Mexico_City"
+  timezone: "America/Mexico_City"   # UTC-6 year round, no DST since 2022
 
 behaviour:
   # a run that returns zero reports raises an ALERT; it never wipes or
@@ -27,3 +43,6 @@ behaviour:
   alert_on_parse_failure: true
   alert_on_unexpected_serie: true
   alert_on_integrity_mismatch: true
+  # A week with no new BMV reports still sends an email saying so. A silent
+  # week is indistinguishable from a dead job.
+  email_even_when_no_new_reports: true

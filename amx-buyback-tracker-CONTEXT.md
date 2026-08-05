@@ -3,15 +3,20 @@
 The standing brief for this project. **Bar: someone reading only this file
 could rebuild the repo from scratch.** Read this before changing anything.
 
-**Current as of 2026-08-05.** Cycles 0, 1 and 2 are complete; both acceptance
-fixtures pass and 56 tests pass. Published to a **private** GitHub repo,
-<https://github.com/rafaelxoliver4-art/amx-buyback-tracker> — still **no
-Actions, no email, no secrets**. For what is *decided* see §10.
+**Current as of 2026-08-05.** Cycles 0–3 complete; both acceptance fixtures
+pass and 70 tests pass. Published to a **private** GitHub repo,
+<https://github.com/rafaelxoliver4-art/amx-buyback-tracker>.
 
-The nine rulings of 2026-08-05 are recorded in §10. Seven are implemented,
-including **two reversals** — the full backfill stands (§7.2) and the PDFs
-stay committed. Two remain open: confirming the five programme additions, and
-whether the 2023-03-17 series-B floor is permanent.
+**All nine rulings are now settled** — see §11. Two were reversals: the full
+backfill stands (§7.2) and the PDFs stay committed.
+
+**The weekly Action and the email are built** (§10). Read §10.1 first: **the
+remote is now authoritative** and local work must `git pull` before starting.
+
+> **Cycle 3 is built but NOT LIVE.** The workflow is written, tested and
+> committed locally, and has **not been pushed**, because the two
+> owner-created GitHub settings it needs — the `EMAIL_APP_PASSWORD` secret and
+> the `FROM_EMAIL` variable — **do not exist yet**. See §10.7.
 
 Everything described in this file is **built**, unless a heading says
 otherwise.
@@ -30,9 +35,9 @@ a **weekly** and **monthly** series of:
 - the average price it paid,
 - and what that is as a share of the shares outstanding.
 
-Eventually (Cycle 2) this runs unattended once a week and emails the owner a
-refreshed workbook and chart. Nothing about the pipeline may ever require a
-human to read a PDF.
+Since Cycle 3 this runs unattended once a week and emails the owner a
+refreshed workbook and chart (§10). Nothing about the pipeline may ever
+require a human to read a PDF.
 
 ## 2. Project isolation — non-negotiable
 
@@ -62,10 +67,11 @@ anything. The only file that ever records an absolute path is
 <https://github.com/rafaelxoliver4-art/amx-buyback-tracker> — **private**,
 owner-approved, 9 commits of full unsquashed history.
 
-**Still not approved and not built: GitHub Actions, any email, any repo
-secret.** No credential of any kind is created, stored, requested or read by
-this repo. The owner authenticates `gh` themselves; if `gh auth status` is not
-already authenticated when a push is needed, the run **stops and reports**.
+**GitHub Actions and the weekly email are APPROVED and built** (Cycle 3, §10).
+**No credential of any kind is created, stored, requested or read by this
+repo** — secrets are owner-created and referenced by name only (§10.5). The
+owner authenticates `gh` themselves; if `gh auth status` is not already
+authenticated when a push is needed, the run **stops and reports**.
 
 ## 3. The source
 
@@ -584,7 +590,148 @@ which ties **exactly** to the true 31-Jul → 30-Sep window
 (`7,921,319,134 − 6,290,371,824`). The owner's Aug + Sep = 2,066 mn / 129.2 mn
 **overstates it by 435 mn / 27.2 mn**.
 
-## 10. Decisions log
+## 10. Unattended operation
+
+### 10.1 THE REMOTE BECOMES AUTHORITATIVE
+
+Once the weekly Action is live it **commits to `main` on its own**, and the
+local folder stops being the live copy — it goes stale the moment a scheduled
+run lands.
+
+> **Not yet in force.** The workflow has not been pushed (§10.7), so today the
+> local tree is still ahead of the remote. **The moment the first scheduled
+> run lands, this section applies and does not stop applying.**
+
+> **Always `git pull` before doing any local work.** A local commit made on a
+> stale tree will conflict with the Action's, and the ledger is append-only,
+> so resolving that conflict by hand is exactly the situation the append-only
+> rule exists to avoid.
+
+The Action never force-pushes, never rewrites history and never deletes
+anything.
+
+### 10.2 What runs, and when
+
+`.github/workflows/weekly.yml`, **Saturdays 12:00 UTC** (`0 12 * * 6`), plus
+`workflow_dispatch` for a manual run. Nothing else triggers it — no push
+trigger, no pull-request trigger, no second schedule.
+
+The cron is **duplicated** in the workflow and in `config/schedule.yaml`,
+because Actions cannot read our config. `tests/test_workflow.py` asserts the
+two agree, so they cannot drift.
+
+Timing, in full: GitHub cron is always UTC; BMV files ~17:30 in Mexico City
+(UTC-6 year round — Mexico abolished DST in 2022), so Friday's report is
+public by ~23:30 UTC Friday. Saturday noon UTC is ~12.5 hours later, and
+09:00 in São Paulo where the owner reads it.
+
+`concurrency` pins the job to one run at a time, with `cancel-in-progress:
+false` — a cancelled run could abandon a half-written ledger commit.
+
+### 10.3 The gate
+
+```
+fetch → parse → build → VERIFY → commit → email
+```
+
+**`verify_backfill.py` is the gate and the only step that can stop the job.**
+If either acceptance fixture fails: **no commit, no email, exit non-zero.** A
+wrong number must never reach the inbox or the ledger. GitHub notifies the
+owner of the failed run, and that notification is the alarm.
+
+`fetch`, `parse` and `build` are deliberately `continue-on-error`. They exit
+non-zero when they raise an **ALERT**, and an ALERT is a data condition the
+owner must *see*, not a reason to kill the job and send nothing. A non-success
+outcome from any of them is injected into the email as a prominent ALERT — and
+it still has to clear the gate.
+
+### 10.4 What the Action commits back
+
+On success, when anything under `data/` or `output/` changed: the ledger, the
+inventory, the new PDFs, the workbook, the chart and the row-count high-water
+mark, in one commit named for the ISO week and the latest report date.
+
+A week with **no new reports** commits nothing and **still emails**, saying so
+plainly. A silent week is indistinguishable from a dead job.
+
+### 10.5 Secrets are owner-managed and referenced by name only
+
+| Name | Kind | Holds |
+|---|---|---|
+| `FROM_EMAIL` | Actions **variable** | the sending address |
+| `EMAIL_APP_PASSWORD` | Actions **secret** | a Gmail app password |
+
+Both are **created by the owner** in the repository settings. This repo stores
+only their **names**, in `config/email.yaml`. `src/send_email.py` reads them
+from the environment and from nowhere else — no config value, no default, no
+literal, no fallback.
+
+**The password is never logged, printed, echoed, written to `run_log.txt`, or
+allowed into an exception message.** The SMTP call is wrapped so a failure
+reports the exception **class** and nothing else, because `smtplib` puts the
+server's reply into the exception args and a reply can quote the credential it
+rejected. A test drives a failing login with a server that echoes the password
+back and asserts it reaches neither stdout, stderr, the run log, nor the alert
+list.
+
+`--dry-run` writes `output/email_preview.html` and sends nothing. It works
+with **no credentials present at all**, which is what makes the body
+reviewable without touching a secret.
+
+### 10.6 The 60-day scheduled-workflow disable — an open risk
+
+GitHub disables scheduled workflows after **60 days of repository
+inactivity**. Verified, and the news is mixed:
+
+- The rule **applies to this repo.** GitHub's own docs say *"In a public
+  repository…"*, but the community reports it applies to private repositories
+  too, and the docs never state an exemption. Assume it applies.
+- **Only new commits** reset the timer. Tags, releases, issues and merged PRs
+  do not.
+- **Whether a commit by `github-actions[bot]` via `GITHUB_TOKEN` resets it is
+  undocumented.** No GitHub staff answer exists on the community threads that
+  ask. This is genuinely unresolved, not merely unread.
+
+So the Action's own weekly commit **may or may not** keep the schedule alive.
+Do not rely on it.
+
+**Do not add a dummy-commit keepalive.** The most popular tool for it
+(`gautamkrishnar/keepalive-workflow`) has been **disabled by GitHub Staff for
+a terms-of-service violation**. Manufacturing activity to game the timer is
+not a safe pattern.
+
+**What to do instead:** GitHub emails the owner *before* disabling a workflow,
+and re-enabling is one click in the Actions tab. **If the weekly email ever
+stops arriving, check that first.** If bot commits turn out not to count, the
+clean fix is to push with a fine-grained PAT instead of `GITHUB_TOKEN` — a
+user-authored commit unambiguously counts — but that needs a new
+owner-created secret and is not approved.
+
+### 10.7 NOT LIVE YET — the two settings the owner must create
+
+The workflow is written, tested and committed, but **has not been pushed**,
+because neither setting it depends on exists. Verified 2026-08-05 via the
+GitHub API: `actions/secrets` and `actions/variables` both return
+`total_count: 0`.
+
+| Create | Kind | Name | Value |
+|---|---|---|---|
+| Repo settings → Secrets and variables → Actions → **Secrets** | secret | `EMAIL_APP_PASSWORD` | a Gmail **app password** for the sending account — not the account password |
+| same page → **Variables** | variable | `FROM_EMAIL` | `ibotatom@gmail.com` |
+
+Gmail requires an **app password** (2-Step Verification must be on); an
+ordinary account password is rejected by `smtp.gmail.com`.
+
+Pushing the workflow before these exist would put a job on the schedule that
+fetches, verifies and commits correctly and then **fails at the email step
+every Saturday**. It was held back deliberately. Once both exist, the
+remaining work is: push, trigger one `workflow_dispatch` run, and confirm the
+run log is clean.
+
+**Nobody but the owner ever handles those values.** This repo records only
+their names.
+
+## 11. Decisions log
 
 ### 2026-08-05 — Cycle 1
 
@@ -637,8 +784,8 @@ below.**
 | **2** | **Ruling Q1's revisit trigger was wrong** and is replaced by a seam-measurability test. | See below. | **Implemented** (policy corrected) |
 | **3** | **Ratchet the row-count guard** to a high-water mark. | One shrink used to become the new baseline and the alarm went quiet. | **Implemented** |
 | **4** | **Ship the scraped figures.** The owner's table is not amended to match, and its 11 declared errors stand as declared. | The primary source wins; this is the standing governance rule (§9). | **Standing policy**, already in force |
-| **5** | *No ruling stated* on confirming the five programme additions. | — | **Still open** |
-| **6** | *No ruling stated* on the 2023-03-17 series-B floor. | — | **Still open** |
+| **5** | **The five additions are confirmed BY HAND.** No AGM scraper. | The seam already pins each to the peso; `confirmed_by_owner` means cross-checked, not measured. | **Settled** |
+| **6** | **2023-03-17 is a PERMANENT floor** for the derived series. | Splicing A + AA + L into B needs a conversion ratio — modelling, not extraction. | **Settled** |
 | **7** | **The PDFs STAY COMMITTED.** Reverses the earlier gitignore governance decision. | 31 MB is cheap for a git repo; they are the evidence every figure re-derives from. | **Implemented** |
 | **8** | **Add a programme-reduction guard** — a sanity band on the implied average price. | A cancellation that lowers the remanente is arithmetically identical to a buyback. | **Implemented** |
 | **9** | **Thin the chart labels** beyond 24 points, always keeping first, last, min and max. | 41 months of 45° labels collide. | **Implemented** |
@@ -677,6 +824,35 @@ GitHub threshold, so the ruling is unaffected.
 rate (~60/yr, weekly plus month-end), or about **4 years** if selection ever
 widened to every trading day. At that point they move to a release asset or
 LFS rather than being dropped.
+
+#### Ruling 5 — the additions are confirmed by hand
+
+**No AGM scraper, ever.** A second scraper for a once-a-year fact is not worth
+building or maintaining.
+
+`confirmed_by_owner: true` means **cross-checked against the resolution** — a
+human act. It does not mean "measured": the inter-report seam already pins
+every addition **to the peso**, which is the stronger evidence (§6.1). The
+flag records provenance, not precision.
+
+**Five INFO lines every run is the correct resting state, not a defect to
+engineer away.** They are a standing reminder that five figures rest on
+measurement rather than documentation. The email renders them as a quiet
+footnote (§10.5), never as a warning block.
+
+#### Ruling 6 — 2023-03-17 is a permanent floor
+
+The derived series **never** starts earlier. Before that date AMX filed serie
+A, AA and L and no B at all (§3.1).
+
+Splicing them into a continuous B series would require a **conversion ratio**
+between the old classes and B. That is **modelling, not extraction** — and it
+would be the first invented number in a project whose central rule is that a
+number is never invented. The cost is not worth the compromise.
+
+Pre-2023 reports **stay in the ledger as evidence** — 97 reports, already
+stored and integrity-tested. **They never enter the derived frames.** Two
+tests hold that line.
 
 #### Ruling 2 — the corrected revisit trigger
 

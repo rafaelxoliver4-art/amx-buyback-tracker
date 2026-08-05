@@ -1,0 +1,149 @@
+# ---------------------------------------------------------------------------
+# The weekly unattended run.
+#
+# THE CRON IS DUPLICATED. GitHub Actions cannot read config/schedule.yaml, so
+# the schedule has to be a literal here. tests/test_workflow.py asserts this
+# cron and config/schedule.yaml's agree, so they can never drift apart.
+#
+# "0 12 * * 6" = Saturdays 12:00 UTC. GitHub cron is ALWAYS UTC. BMV files
+# ~17:30 in Mexico City (UTC-6 year round - Mexico abolished DST in 2022), so
+# Friday's report is public by ~23:30 UTC Friday. Saturday noon UTC is ~12.5h
+# later, and 09:00 in Sao Paulo where the owner reads it.
+#
+# SECRETS ARE REFERENCED BY NAME ONLY. Their values are injected by GitHub
+# into the email step's environment and are never printed, logged or
+# committed. Nothing in this repo can read them.
+# ---------------------------------------------------------------------------
+name: Weekly AMX buyback run
+
+on:
+  schedule:
+    - cron: "0 12 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Two runs must never race the append-only ledger. A queued run waits rather
+# than being cancelled, so a manual run can never discard a scheduled one
+# mid-commit.
+concurrency:
+  group: amx-weekly-run
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # --- data steps ------------------------------------------------------
+      # These are continue-on-error ON PURPOSE. They exit non-zero when they
+      # raise an ALERT, and an ALERT is a data condition the owner must SEE,
+      # not a reason to kill the job and send nothing. A failure here is
+      # surfaced in the email as an ALERT (see "Collect step outcomes") and,
+      # critically, still has to clear the acceptance gate below.
+      - name: Fetch reports from BMV
+        id: fetch
+        continue-on-error: true
+        run: python src/fetch_reports.py
+
+      - name: Parse into the ledger
+        id: parse
+        continue-on-error: true
+        run: python src/parse_report.py
+
+      - name: Build the series, workbook and chart
+        id: build
+        continue-on-error: true
+        run: python src/build_series.py
+
+      # --- THE GATE --------------------------------------------------------
+      # No continue-on-error. If the acceptance test fails the job stops here:
+      # nothing is committed and no email is sent. A wrong number must never
+      # reach the inbox or the ledger. GitHub emails the owner about the
+      # failed run, which is the alarm.
+      - name: GATE - acceptance test (both fixtures)
+        run: python src/verify_backfill.py
+
+      - name: Collect step outcomes
+        id: outcomes
+        run: |
+          NOTICES=""
+          for s in fetch:${{ steps.fetch.outcome }} parse:${{ steps.parse.outcome }} build:${{ steps.build.outcome }}; do
+            name="${s%%:*}"; out="${s##*:}"
+            if [ "$out" != "success" ]; then
+              NOTICES="$NOTICES --notice ALERT:STEP_FAILED:the ${name} step exited non-zero (outcome: ${out}) - the acceptance test still passed, but check the run log"
+            fi
+          done
+          echo "notices=$NOTICES" >> "$GITHUB_OUTPUT"
+
+      # --- commit what changed --------------------------------------------
+      - name: Detect changes
+        id: changes
+        run: |
+          if [ -n "$(git status --porcelain -- data output)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "new_pdfs=$(git status --porcelain -- data/raw | grep -c '^??' || true)" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "new_pdfs=0" >> "$GITHUB_OUTPUT"
+          fi
+          echo "week=$(date -u +'%G-W%V')" >> "$GITHUB_OUTPUT"
+          echo "latest=$(tail -n 1 data/raw_reports.csv | cut -d, -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name  "amx-buyback-tracker[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data output
+          git commit -m "Weekly run ${{ steps.changes.outputs.week }} - reports through ${{ steps.changes.outputs.latest }}
+
+          ${{ steps.changes.outputs.new_pdfs }} new PDF(s). Ledger, inventory, workbook,
+          chart and the listing row-count high-water mark updated by the
+          scheduled run. Acceptance test passed before this commit was made."
+          git push
+
+      # --- email -----------------------------------------------------------
+      # ALWAYS on success, even in a week with no new reports: a silent week
+      # is indistinguishable from a dead job.
+      #
+      # FROM_EMAIL and EMAIL_APP_PASSWORD are owner-created GitHub settings,
+      # referenced BY NAME. GitHub injects the values here and masks them in
+      # the log. Nothing in this repo reads, prints or stores them.
+      - name: Email the owner
+        env:
+          FROM_EMAIL: ${{ vars.FROM_EMAIL }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+        run: |
+          if [ "${{ steps.changes.outputs.changed }}" = "true" ]; then
+            python src/send_email.py ${{ steps.outcomes.outputs.notices }}
+          else
+            python src/send_email.py --no-new-reports ${{ steps.outcomes.outputs.notices }}
+          fi
+
+      - name: Upload artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amx-buyback-output
+          path: |
+            output/AMX_Buybacks.xlsx
+            output/amx_buybacks_chart.png
+            data/run_log.txt
+          retention-days: 30
