@@ -14,11 +14,11 @@ standing brief.
 
 | | |
 |---|---|
-| Cycles complete | **0** (recon + scaffold), **1** (backfill, styling, chart), **2** (the nine rulings + first push), **3** (Actions + email, **LIVE**) |
-| Ledger | **537 rows**, append-only, serie B from 2023-03-17 |
+| Cycles complete | **0** recon · **1** backfill/chart · **2** nine rulings + first push · **3** Actions + email **LIVE** · **4** source balances, month-closing weeks, Fri 22:00 |
+| Ledger | **538 rows**, append-only, serie B from 2023-03-17 |
 | PDFs held | 343, all parsed, **0 unparsed** |
 | Acceptance test | **2026 fixture PASS · full-history fixture PASS (32/32 rows)** |
-| Test suite | **70 passed** |
+| Test suite | **78 passed** |
 | Deliverables | `output/AMX_Buybacks.xlsx` (6 sheets), `output/amx_buybacks_chart.png`, `output/email_preview.html` |
 
 ### ✅ LIVE — the weekly job is running and proven
@@ -30,7 +30,7 @@ standing brief.
 | | |
 |---|---|
 | Workflow | `Weekly AMX buyback run`, id 328050218, **active** |
-| Next run | **Saturday 08 August 2026, 12:00 UTC** = 09:00 São Paulo |
+| Next run | **Friday 07 August 2026, 22:00 São Paulo** = Sat 08 Aug 01:00 UTC |
 | Gate | ran at 18:27:03 and passed, **before** commit (18:27:03→04) and email (18:27:04→07) |
 | Action commit | [`9a4ec81`](https://github.com/rafaelxoliver4-art/amx-buyback-tracker/commit/9a4ec81) — ledger **+1/−0** |
 | Email | **arrived in the INBOX**, not spam, 18:27:06Z |
@@ -75,6 +75,135 @@ stands, and the PDFs stay committed.
 
 **Nothing moved.** Both acceptance fixtures are byte-identical to Cycle 1 and
 every workbook cell is unchanged.
+
+---
+
+## Cycle 4 — 2026-08-05 — source balances, month-closing weeks, Friday 22:00
+
+### Handed off
+
+Three owner-requested changes to a live system, each of which had to leave
+every historical figure untouched.
+
+### What came back
+
+**Status: complete. No Monthly, YTD or Raw figure moved** — verified cell by
+cell against a pre-change snapshot (Raw 538 rows, Monthly 43, YTD 12, all
+identical) and both acceptance fixtures pass unchanged. **78 tests** (70 → 78).
+
+#### 1. The email now shows the inputs, not only the outputs
+
+Above the derived headline, as of the latest report:
+
+| | |
+|---|---|
+| Report date + source | *"as reported in the 04-Aug-2026 [BMV report](https://www.bmv.com.mx/docs-pub/recompra/recompra_1579878_1.pdf)"* |
+| Remaining resources (MXN) | **16,802,530,840** −237,578,757 |
+| Shares outstanding | **59,982,000,000** −11,000,000 |
+
+A property worth noticing: **each delta equals the derived figure beneath it**
+(−237,578,757 MXN = the 238 mn buyback; −11,000,000 = the 11.0 mn shares), so
+the mail now carries its own arithmetic check. Negative deltas render red.
+Order is report date → balances → derived headline → chart → YTD → notices.
+
+#### 2. Weekly rows close on month end
+
+A weekly period is an ISO week **except that a week crossing a month boundary
+is split at that month's last report**. 179 → **198 weekly rows**, **20 weeks
+split**, 42 month-end rows. New columns `Period Start`, `Period End`,
+`Month End`.
+
+**The reconciliation — all 41 months, to the peso and to the share:**
+
+| | weekly | monthly |
+|---|---:|---:|
+| buyback | **53,259,867,889** | **53,259,867,889** |
+| shares | **3,241,500,000** | **3,241,500,000** |
+
+Every individual month matches too — 41 of 41, zero failures. It holds *by
+construction*: each row's buyback is `prior.remanente + additions −
+this.remanente`, so within a month the weekly rows telescope to
+`(last report of M−1) − (last report of M)`, which is the monthly figure by
+definition — **provided** the last weekly row of the month closes on the
+month's last report. That proviso is exactly what the split buys.
+
+`reconcile_weekly_to_monthly()` now runs on **every build** and ALERTs on a
+break. Neither frame is ever adjusted to make them agree.
+
+#### 3. The run moved to Friday 22:00 São Paulo
+
+`0 12 * * 6` → **`0 1 * * 6`** — Saturday 01:00 UTC, which **is** Friday 22:00
+in São Paulo. Changed in both `config/schedule.yaml` and the workflow; the
+test that pins them together still passes, and a new test asserts the cron
+really does resolve to Friday 22:00 São Paulo rather than trusting the
+comment.
+
+```
+Mexico City UTC−6 (no DST since 2022) · São Paulo UTC−3 (no DST since 2019)
+  => Mexico City is 3 hours BEHIND São Paulo
+
+BMV files  16:39–17:59 Mexico City = 19:39–20:59 São Paulo = 22:39–23:59 UTC Fri
+Run at     01:00 UTC Sat           = 22:00 Friday São Paulo
+```
+
+**1.02 hours after the latest filing ever observed.** Tight on purpose, and
+safe: the fetcher walks the listing rather than asking for "today", and the
+ledger is append-only, so a late or missed report is picked up next week. A
+late filing costs **one week of freshness, never data** — and never a wrong
+figure, because the gate would stop the run before anything was committed.
+
+#### Verification
+
+- **Nothing moved:** Raw/Monthly/YTD identical cell for cell to the snapshot
+  taken before any edit.
+- **Both fixtures PASS** unchanged.
+- **41/41 months reconcile.**
+- **78 tests pass.**
+- **Two live runs**, both all-green:
+  [31054675145](https://github.com/rafaelxoliver4-art/amx-buyback-tracker/actions/runs/31054675145)
+  and
+  [31054958472](https://github.com/rafaelxoliver4-art/amx-buyback-tracker/actions/runs/31054958472).
+  Emails delivered to the inbox at 22:58:15Z and 23:03:13Z.
+
+#### A bug I introduced and caught by reading the delivered email back
+
+The first Cycle 4 email went out with the **YTD table header un-bolded and
+missing its rule**. Cause: the new balances block declared a local `th`, which
+**shadowed** the `th` the YTD header uses further down the same function. The
+figures were all correct; only the styling regressed.
+
+It was found by pulling the delivered message back out of Gmail and reading
+its HTML — not by trusting that the send succeeded. Fixed by renaming to
+`bl_label`/`bl_value`, and pinned by a test that asserts the YTD header keeps
+`font-weight:bold` and `border-bottom`, plus one asserting the email's section
+order and the presence of the source-PDF link.
+
+**Worth stating plainly: a green run does not mean a correct email.** Every
+step passed on the run that sent the broken one.
+
+#### What the month split made ambiguous, and what I decided
+
+**`Period Start` is the first *report* in the row, not the day after the
+previous row's report.** Those differ at a month boundary. The buyback is
+always measured from the prior row's report — that is what a running balance
+is — so the cash covered can begin a day or two before `Period Start`.
+
+I chose the first-report definition because it keeps the column unambiguous
+and makes "every weekly row lies entirely inside one calendar month" literally
+true. Defining it as "prior report + 1 day" would have put a February row's
+Period Start in January. **The alternative is defensible and this is recorded
+in CONTEXT §7.0 rather than left implicit** — if the owner would rather see
+the true measurement window, it is a one-line change.
+
+Two smaller calls, both documented: a **split week's two halves share one ISO
+Week label** (they are two halves of one week, so this is correct rather than
+a duplicate), and a **no-report week can never carry `Month End`** — there is
+no report, so it closes nothing.
+
+### Next
+
+Nothing outstanding. The next scheduled run is **Friday 07 August 2026, 22:00
+São Paulo** (Saturday 08 August, 01:00 UTC).
 
 ---
 
