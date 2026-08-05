@@ -4,8 +4,9 @@ The standing brief for this project. **Bar: someone reading only this file
 could rebuild the repo from scratch.** Read this before changing anything.
 
 **Current as of 2026-08-05.** Cycles 0, 1 and 2 are complete; both acceptance
-fixtures pass and 56 tests pass. Local git only — no remote, no Actions, no
-email, no secrets. For what is *decided* see §10.
+fixtures pass and 56 tests pass. Published to a **private** GitHub repo,
+<https://github.com/rafaelxoliver4-art/amx-buyback-tracker> — still **no
+Actions, no email, no secrets**. For what is *decided* see §10.
 
 The nine rulings of 2026-08-05 are recorded in §10. Seven are implemented,
 including **two reversals** — the full backfill stands (§7.2) and the PDFs
@@ -57,8 +58,14 @@ All paths in the code are **relative to the repo root**, resolved from
 anything. The only file that ever records an absolute path is
 `data/run_log.txt`, which is transient and gitignored.
 
-The repo is **local git only**. No remote, no GitHub repo, no GitHub Actions
-until an owner-approved cycle says otherwise.
+**Remote (since 2026-08-05):**
+<https://github.com/rafaelxoliver4-art/amx-buyback-tracker> — **private**,
+owner-approved, 9 commits of full unsquashed history.
+
+**Still not approved and not built: GitHub Actions, any email, any repo
+secret.** No credential of any kind is created, stored, requested or read by
+this repo. The owner authenticates `gh` themselves; if `gh auth status` is not
+already authenticated when a push is needed, the run **stops and reports**.
 
 ## 3. The source
 

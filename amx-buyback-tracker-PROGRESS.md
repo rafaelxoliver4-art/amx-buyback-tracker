@@ -21,16 +21,19 @@ standing brief.
 | Test suite | **56 passed** |
 | Deliverables | `output/AMX_Buybacks.xlsx` (6 sheets), `output/amx_buybacks_chart.png` |
 
-### Not done — one blocked, the rest by instruction
+### Published
 
-**BLOCKED: the first push.** `gh auth status` reports not logged in, so the
-repo was not created and nothing was pushed — stopped exactly as the task
-requires. No token, password or SSH key was requested, created, read or
-stored. **Authentication is the owner's to arrange:** run `gh auth login`,
-then step 8 of Cycle 2 is the only work left to publish.
+**PRIVATE repo, live since 2026-08-05:**
+<https://github.com/rafaelxoliver4-art/amx-buyback-tracker>
 
-Not done by instruction: no Actions, no workflow file, no email, no repo
-secret. `git remote -v` is empty. Local git only.
+**9 commits, full history, no squash.** Local and remote HEAD both
+`12404ef`. 371 files including all 342 PDFs. Verified `"isPrivate": true`
+**before** any code was pushed and again after.
+
+Not done by instruction: **no Actions, no workflow file, no email, no repo
+secret** — all verified absent on the remote. No token, password or SSH key
+was ever requested, created, read or stored; the owner authenticated `gh`
+themselves.
 
 ### THE NINE RULINGS — settled 2026-08-05
 
@@ -56,7 +59,7 @@ every workbook cell is unchanged.
 
 ---
 
-## Cycle 2 — 2026-08-05 — the nine rulings settled; push BLOCKED on auth
+## Cycle 2 — 2026-08-05 — the nine rulings settled, and the first push
 
 ### Handed off
 
@@ -65,8 +68,7 @@ brief, then create the private GitHub repo and push.
 
 ### What came back
 
-**Status: steps 1–7 and 9 complete. Step 8 (publish) BLOCKED — `gh` is not
-authenticated. Nothing was pushed; no remote exists.**
+**Status: complete. All nine steps done, including the gated first push.**
 
 **No reported figure moved.** Both acceptance fixtures produce output
 **byte-identical** to Cycle 1, and every cell of Raw, Weekly, Monthly and YTD
@@ -189,25 +191,40 @@ rewritten, so the existing copy stays in past commits.
 3. The Excel chart was **read back from the saved file** to confirm the label
    thinning survived serialisation, rather than trusting the write.
 
-#### Step 8 — PUBLISH: BLOCKED
+#### Step 8 — PUBLISH
 
-```
-$ gh auth status
-You are not logged into any GitHub hosts. To log in, run: gh auth login
-```
+The first attempt **stopped at the gate**: `gh auth status` reported no
+logged-in host, so nothing was created or pushed and no credential was
+touched. Diagnosis for the record — `gh` was installed and Windows Credential
+Manager still held a token for `rafaelxoliver4-art`, but `gh`'s `hosts.yml`
+was missing from every location, so `gh` had no record of being logged in and
+the orphaned keyring entry was invisible to it. **The owner ran
+`gh auth login` themselves** (browser flow, no token handled here) and it
+recreated the config.
 
-**Stopped exactly as instructed.** No repo created, no remote added, nothing
-pushed. No token, password or SSH key was requested, created, read or stored,
-and none will be — authentication is the owner's to arrange.
+| | |
+|---|---|
+| Repo | <https://github.com/rafaelxoliver4-art/amx-buyback-tracker> |
+| Visibility | **PRIVATE** — verified *before* pushing and again after |
+| Commits | **9**, full history, no squash, no re-init |
+| Sync | local and remote HEAD both `12404ef` |
+| Files on remote | **371 blobs**, including all **342 PDFs** |
+| Size | ~32 MB working tree, ~64 MB with `.git` |
 
-Everything else is done and committed locally, so the push is a single step
-once `gh auth login` has been run by the owner.
+**Order of operations was deliberate:** the repo was created *without*
+`--push`, its `isPrivate` flag confirmed, and only then was the history
+pushed. A repo that came out public would have been caught before a single
+line of code left the machine.
 
-### Next
+Verified absent on the remote: **no workflow file, no Action, no repo
+secret**, and no `run_log.txt`, `backfill_run.log`, `.env` or anything
+credential-shaped. Excluded exactly as `.gitignore` intends.
 
-The owner runs `gh auth login`; then step 8 alone — create the private repo,
-verify it is private, push the full history unsquashed. After that, Cycle 3:
-the email body and the weekly unattended run.
+### Next — Cycle 3
+
+The email body and the weekly unattended run. Both need the Architect's
+sign-off on Actions and on an owner-created SMTP secret, neither of which is
+approved yet. Rulings 5 and 6 are also still open.
 
 ---
 
