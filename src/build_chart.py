@@ -29,6 +29,33 @@ from common import load_config, repo_path  # noqa: E402
 
 
 # --------------------------------------------------------------------------
+def label_indices(dl: dict, values: list[float]) -> set[int]:
+    """Which points on the % line get a data label (ruling 9).
+
+    A stride thins the crowd; first, last, min and max are always kept so the
+    endpoints and the extremes survive whatever the stride.
+    """
+    n = len(values)
+    if n == 0:
+        return set()
+    every = dl.get("label_every_n", 1)
+    if every == "auto":
+        every = dl.get("auto_stride", 2) if n > dl.get("auto_threshold", 24) else 1
+    every = max(1, int(every))
+
+    keep = set(range(0, n, every))
+    always = dl.get("always_label") or []
+    if "first" in always:
+        keep.add(0)
+    if "last" in always:
+        keep.add(n - 1)
+    if "min" in always:
+        keep.add(min(range(n), key=lambda i: values[i]))
+    if "max" in always:
+        keep.add(max(range(n), key=lambda i: values[i]))
+    return keep
+
+
 def chart_rows(cfg: dict, ccfg: dict, monthly: list[dict]) -> list[dict]:
     """The plotted subset: every derived month (the anchor has no buyback)."""
     src = ccfg["source"]
@@ -113,7 +140,10 @@ def render_png(cfg: dict, ccfg: dict, monthly: list[dict], log=None) -> Path | N
     # ---- line data labels -------------------------------------------------
     dl = ln["data_labels"]
     if dl["show"]:
+        keep = label_indices(dl, line_vals)
         for xi, v in zip(x, line_vals):
+            if xi not in keep:
+                continue
             ax2.annotate(_pct(v, dl["number_format"]),
                          xy=(xi, v),
                          xytext=(0, dl["offset_pt"]),
@@ -168,8 +198,9 @@ def render_png(cfg: dict, ccfg: dict, monthly: list[dict], log=None) -> Path | N
                 transparent=out["transparent"])
     plt.close(fig)
     if log:
+        shown = len(label_indices(dl, line_vals)) if dl["show"] else 0
         log.info(f"chart PNG written: {path} ({len(rows)} months, "
-                 f"{labels[0]}..{labels[-1]})")
+                 f"{labels[0]}..{labels[-1]}; {shown} of {len(rows)} % labels drawn)")
     return path
 
 
@@ -189,7 +220,7 @@ def add_excel(cfg: dict, ccfg: dict, wb, monthly: list[dict], log=None):
     """
     from openpyxl.chart import BarChart, LineChart, Reference
     from openpyxl.chart.axis import ChartLines
-    from openpyxl.chart.label import DataLabelList
+    from openpyxl.chart.label import DataLabel, DataLabelList
     from openpyxl.chart.marker import Marker
     from openpyxl.chart.series import SeriesLabel
     from openpyxl.chart.shapes import GraphicalProperties
@@ -258,6 +289,17 @@ def add_excel(cfg: dict, ccfg: dict, wb, monthly: list[dict], log=None):
         line.dataLabels.showCatName = False
         line.dataLabels.showLegendKey = False
         line.dataLabels.txPr = _rot(dl["font_size_pt"], dl["rotation_deg"])
+        # ruling 9: thin the labels in Excel too, so the two renders agree.
+        # openpyxl does not model OOXML's <c:delete> on an individual label,
+        # so the dropped points get an explicit showVal=False instead - which
+        # IS modelled, and blanks them just the same.
+        line_vals = [(r[src["line_key"]] or 0) for r in rows]
+        keep = label_indices(dl, line_vals)
+        line.dataLabels.dLbl = [
+            DataLabel(idx=i, showVal=False, showSerName=False,
+                      showCatName=False, showLegendKey=False)
+            for i in range(len(rows)) if i not in keep
+        ]
 
     # ---- axes -------------------------------------------------------------
     yp, ys = ax_c["y_primary"], ax_c["y_secondary"]

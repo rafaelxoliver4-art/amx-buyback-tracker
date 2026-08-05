@@ -52,9 +52,17 @@ listing:
     # BMV returns all history with no date filter, so the response grows ~250
     # rows a year forever. Alert long before it becomes a problem.
     max_response_bytes: 10485760      # 10 MB
+    # Revisit the no-cap decision at this many rows (~1,255 today, +250/yr).
+    revisit_cap_at_rows: 5000
     # A SHRINKING history is a red flag - rows should only ever be added.
-    # Compared against the row count of the previous run's inventory CSV.
-    alert_if_fewer_rows_than_previous: true
+    #
+    # RATCHET (ruling 3, 2026-08-05). Compared against the HIGHEST count ever
+    # recorded, not the previous run's. The previous-run version was weaker:
+    # one shrink got written to listing_inventory.csv and the next run adopted
+    # the lower number as its baseline, so the alarm went quiet after a single
+    # bad day. A new high moves the mark; a shrink never does.
+    alert_if_fewer_rows_than_high_water: true
+    row_count_high_water_file: "data/listing_rowcount_highwater.json"
   # The page holds several accordion sections; we want only this one.
   section_heading: "ADQUISICION DE ACCIONES POR EMISORA (RECOMPRAS)"
   asunto_expected: "Recompras"
@@ -158,6 +166,17 @@ series:
   jump_probe_days_before: 7
   jump_probe_days_after: 1
 
+# --- display (ruling 1, 2026-08-05) ---------------------------------------
+# A VIEW, NOT A DELETION. This filters the Weekly, Monthly, YTD and chart
+# OUTPUT only. It must NEVER filter data/raw_reports.csv, the inventory, or
+# the acceptance test - those always see the full history, and a test asserts
+# the ledger row count is unchanged when this is set.
+#
+# The derivation runs BEFORE the filter, so the first displayed period still
+# carries the buyback measured from its (hidden) predecessor.
+display:
+  start_year: null        # null = all history; 2026 = show 2026 onward only
+
 # --- workbook -------------------------------------------------------------
 workbook:
   path: "output/AMX_Buybacks.xlsx"
@@ -253,6 +272,43 @@ workbook:
 # so it stays visible - it is never absorbed by a blanket tolerance, and any
 # NEW break still fails the integrity test.
 integrity:
+  # --- the programme-REDUCTION guard (ruling 8, 2026-08-05) ---------------
+  # Additions are handled (config/program_additions.yaml). The opposite -
+  # a cancellation that LOWERS the remanente - is arithmetically identical to
+  # a buyback and would otherwise pass silently.
+  #
+  # It shows up as an absurd IMPLIED AVERAGE PRICE: the remanente falls a long
+  # way while few or no shares leave circulation, so buyback_mxn / shares
+  # explodes. So we band the implied price.
+  #
+  # CALIBRATED FROM THE OBSERVED DATA, not assumed (2026-08-05, 177 weekly and
+  # 41 monthly periods, 2023-03..2026-08):
+  #     weekly  min 14.17  median 16.40  max 24.38
+  #     monthly min 14.40  median 16.26  max 22.75
+  #     worst legitimate deviation from the trailing-12 median: 1.316x
+  #
+  #   min_mxn 5.0   - 2.8x BELOW the observed minimum. Only an order-of-
+  #                   magnitude or sign error reaches it; real market moves
+  #                   never will.
+  #   max_mxn 60.0  - 2.5x ABOVE the observed maximum, and far above any
+  #                   plausible AMX B price. A backstop for when the trailing
+  #                   median has itself drifted.
+  #   max_ratio_vs_median 2.0 - against a worst legitimate 1.316x, a 52%
+  #                   margin. This is the sharp instrument; the absolute band
+  #                   is the blunt one.
+  #
+  # An ALERT is raised. The row is NEVER suppressed and NEVER adjusted.
+  implied_price_band:
+    min_mxn: 5.0
+    max_mxn: 60.0
+    max_ratio_vs_median: 2.0
+    median_window: 12           # trailing periods used for the median
+    min_periods_for_ratio: 6    # below this there is no usable median
+    # A reduction with NO shares bought divides by zero and yields no price at
+    # all, so the band alone would miss it. Any period that moves at least
+    # this much cash while retiring zero shares is alerted outright.
+    zero_share_spend_alert_mxn: 1000000
+
   known_source_discrepancies:
     - field: remanente
       report_date: 2026-04-24

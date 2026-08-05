@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import json
 import re
 import sys
 from html.parser import HTMLParser
@@ -126,7 +127,6 @@ def fetch_inventory(cfg: dict, sess: PoliteSession, log: RunLog) -> list[dict]:
     """One GET -> every recompras row ever published for this issuer."""
     url = listing_url(cfg)
     log.info(f"listing: GET {url}")
-    previous_rows = len(read_inventory(cfg))     # before we overwrite it
     resp = sess.get(url)
     if resp.status_code != 200:
         log.alert(f"listing returned HTTP {resp.status_code} - no inventory",
@@ -175,12 +175,65 @@ def fetch_inventory(cfg: dict, sess: PoliteSession, log: RunLog) -> list[dict]:
     inventory.sort(key=lambda r: (r["report_date"], r["published_at"]))
     log.info(f"listing: {len(inventory)} recompras rows ({skipped} non-recompras rows ignored), "
              f"{size:,} bytes")
-    if guards.get("alert_if_fewer_rows_than_previous") and previous_rows and len(inventory) < previous_rows:
-        log.alert(f"listing returned {len(inventory)} rows, FEWER than the "
-                  f"{previous_rows} recorded by the previous run - history should only "
-                  "ever grow. Existing data left untouched.",
-                  code="LISTING_SHRANK")
+    check_row_count_ratchet(cfg, len(inventory), log)
+    if guards.get("revisit_cap_at_rows") and len(inventory) >= guards["revisit_cap_at_rows"]:
+        log.notice(f"listing has reached {len(inventory):,} rows, the "
+                   f"{guards['revisit_cap_at_rows']:,}-row mark at which the no-cap "
+                   "decision is to be revisited", code="LISTING_REVISIT_CAP")
     return inventory
+
+
+# --------------------------------------------------------------------------
+# ruling 3: the row-count ratchet
+# --------------------------------------------------------------------------
+def read_high_water(cfg: dict) -> int:
+    """Highest listing row count ever recorded. 0 if never recorded.
+
+    This state file is COMMITTED, not gitignored, for the same reason the
+    ledger is: the guard has to survive a fresh clone. Gitignored, the first
+    run after a clone would start from no mark, accept whatever the listing
+    returned, and silently adopt a shrunken history as its new baseline -
+    which is precisely the failure the ratchet exists to prevent.
+    """
+    path = repo_path(cfg["listing"]["guards"]["row_count_high_water_file"])
+    if not path.exists():
+        return 0
+    try:
+        return int(json.loads(path.read_text(encoding="utf-8"))["max_rows"])
+    except (ValueError, KeyError, TypeError):
+        return 0
+
+
+def check_row_count_ratchet(cfg: dict, rows: int, log: RunLog) -> int:
+    """ALERT when below the high-water mark. A new high moves the mark;
+    a shrink never does. Returns the mark in force after this run."""
+    guards = cfg["listing"].get("guards") or {}
+    if not guards.get("alert_if_fewer_rows_than_high_water"):
+        return 0
+    path = repo_path(guards["row_count_high_water_file"])
+    mark = read_high_water(cfg)
+
+    if rows < mark:
+        log.alert(f"listing returned {rows:,} rows, FEWER than the high-water mark of "
+                  f"{mark:,} - history should only ever grow, so the page, the selector "
+                  "or the issuer id has probably broken. The mark is NOT lowered and "
+                  "existing data is left untouched.",
+                  code="LISTING_SHRANK")
+        return mark
+
+    if rows > mark:
+        path.write_text(json.dumps({
+            "max_rows": rows,
+            "recorded_at_utc": utcnow_iso(),
+            "note": "Highest listing row count ever seen. Ratchet: raised by a new "
+                    "high, never lowered by a shrink. Committed so the guard survives "
+                    "a fresh clone.",
+        }, indent=2) + "\n", encoding="utf-8")
+        if mark:
+            log.info(f"listing row-count high-water mark raised {mark:,} -> {rows:,}")
+        else:
+            log.info(f"listing row-count high-water mark initialised at {rows:,}")
+    return max(rows, mark)
 
 
 def write_inventory(cfg: dict, inventory: list[dict]) -> Path:

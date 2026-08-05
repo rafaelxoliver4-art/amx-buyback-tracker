@@ -73,6 +73,17 @@ line:
     position: "above"
     offset_pt: 6.0
     color: "#4A3F35"
+    # --- density (ruling 9, 2026-08-05) ------------------------------------
+    # 41 months of 45-degree labels collide in the busy stretches.
+    #   auto -> label every point up to `auto_threshold`, every 2nd beyond it
+    #   1    -> every point
+    #   N    -> every Nth point
+    # First, last, minimum and maximum are ALWAYS labelled whatever the
+    # stride, so the endpoints and the extremes never get dropped.
+    label_every_n: auto
+    auto_threshold: 24
+    auto_stride: 2
+    always_label: ["first", "last", "min", "max"]
 
 # --- axes ------------------------------------------------------------------
 axes:

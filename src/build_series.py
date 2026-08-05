@@ -214,6 +214,71 @@ def build_frame(anchors: list[dict], additions: list[dict], cfg: dict,
 
 
 # --------------------------------------------------------------------------
+# ruling 1 (2026-08-05): the display window - a VIEW, never a deletion
+# --------------------------------------------------------------------------
+def apply_display_filter(cfg: dict, frame: list[dict]) -> list[dict]:
+    """Trim a frame for OUTPUT only.
+
+    Never touches the ledger, the inventory or the acceptance test - those
+    always see the whole history. The derivation has already run by the time
+    this is called, so the first surviving row keeps the buyback measured from
+    its now-hidden predecessor.
+    """
+    start = (cfg.get("display") or {}).get("start_year")
+    if not start:
+        return frame
+    return [r for r in frame if r["date"].year >= int(start)]
+
+
+# --------------------------------------------------------------------------
+# ruling 8 (2026-08-05): the programme-REDUCTION guard
+# --------------------------------------------------------------------------
+def check_implied_price_band(cfg: dict, frame: list[dict], label: str, log: RunLog) -> None:
+    """A cancellation that LOWERS the remanente is arithmetically identical to
+    a buyback. It betrays itself as an absurd implied average price: a lot of
+    cash leaves against few or no shares.
+
+    ALERTs only. The row is never suppressed and never adjusted.
+    """
+    band = (cfg.get("integrity") or {}).get("implied_price_band")
+    if not band:
+        return
+    import statistics
+
+    seen: list[float] = []
+    for r in frame:
+        px, spend, shares = r.get("avg_price"), r.get("buyback_mxn"), r.get("shares_bought")
+
+        # cash out, no shares in - divides by zero, so the band alone misses it
+        if (not shares) and spend and abs(spend) >= band["zero_share_spend_alert_mxn"]:
+            log.alert(f"{label} {r['date']}: {spend:,} MXN of remanente moved with ZERO "
+                      "shares retired - that is not a buyback. A programme reduction or "
+                      "an undeclared addition is the likely cause; the row is reported "
+                      "as measured, not adjusted.",
+                      code="IMPLIED_PRICE_NO_SHARES", affected_date=r["date"])
+            continue
+        if px is None:
+            continue
+
+        if px < band["min_mxn"] or px > band["max_mxn"]:
+            log.alert(f"{label} {r['date']}: implied average price {px:,.2f} MXN is "
+                      f"outside the sanity band {band['min_mxn']}-{band['max_mxn']} - "
+                      "a programme reduction, a share-structure event or a data error. "
+                      "Reported as measured, not adjusted.",
+                      code="IMPLIED_PRICE_BAND", affected_date=r["date"])
+        elif len(seen) >= band["min_periods_for_ratio"]:
+            med = statistics.median(seen[-band["median_window"]:])
+            if med and max(px / med, med / px) > band["max_ratio_vs_median"]:
+                log.alert(f"{label} {r['date']}: implied average price {px:,.2f} MXN "
+                          f"deviates from the trailing-{band['median_window']} median of "
+                          f"{med:,.2f} by more than {band['max_ratio_vs_median']}x - "
+                          "a programme reduction is the likeliest cause. Reported as "
+                          "measured, not adjusted.",
+                          code="IMPLIED_PRICE_DEVIATION", affected_date=r["date"])
+        seen.append(px)
+
+
+# --------------------------------------------------------------------------
 # ruling 4: never a silent gap
 # --------------------------------------------------------------------------
 def fill_empty_weeks(cfg: dict, frame: list[dict], log: RunLog) -> list[dict]:
@@ -439,6 +504,19 @@ def write_workbook(cfg: dict, ledger: list[dict], weekly: list[dict],
     style = wc["style"]
     wb = Workbook()
 
+    # ruling 1: OUTPUT-only window. The ledger written to the Raw sheet below
+    # is deliberately NOT filtered - Raw is the full record.
+    full_weekly, full_monthly = weekly, monthly
+    weekly = apply_display_filter(cfg, weekly)
+    monthly = apply_display_filter(cfg, monthly)
+    if len(weekly) != len(full_weekly) or len(monthly) != len(full_monthly):
+        start = cfg["display"]["start_year"]
+        log.notice(f"display.start_year = {start}: showing {len(weekly)} of "
+                   f"{len(full_weekly)} weekly and {len(monthly)} of {len(full_monthly)} "
+                   "monthly rows. This is a VIEW - the ledger, the inventory and the "
+                   "acceptance test are untouched.",
+                   code="DISPLAY_WINDOW")
+
     # ---- Raw --------------------------------------------------------------
     ws = wb.active
     ws.title = wc["sheets"]["raw"]
@@ -500,7 +578,10 @@ def write_workbook(cfg: dict, ledger: list[dict], weekly: list[dict],
     ycols = yc["columns"]
     year = max(r["date"].year for r in monthly)
     ytd = [r for r in monthly if r["date"].year == year and not r["is_anchor"]]
-    prior = [r for r in monthly if r["date"].year < year]
+    # % of shares outstanding at 31-Dec of the PRIOR year. Taken from the
+    # UNFILTERED frame: a display window that starts in the current year would
+    # otherwise hide the very row this denominator comes from.
+    prior = [r for r in full_monthly if r["date"].year < year]
     base_shares = prior[-1]["shares_outstanding"] if prior else None
     through = max(r["date"] for r in monthly if r["date"].year == year)
 
@@ -610,6 +691,11 @@ def build(cfg: dict, log: RunLog, probe: bool = True):
         weekly = fill_empty_weeks(cfg, weekly, log)
     if fill.get("monthly"):
         monthly = fill_empty_months(cfg, monthly, log)
+
+    # ruling 8: run over the FULL frames, before any display filtering, so a
+    # reduction in hidden history is still caught
+    check_implied_price_band(cfg, weekly, "weekly", log)
+    check_implied_price_band(cfg, monthly, "monthly", log)
 
     # Ruling 1: ONE line per unconfirmed addition per run - an INFO notice,
     # not a repeated ALERT. It stays visible until the owner confirms it

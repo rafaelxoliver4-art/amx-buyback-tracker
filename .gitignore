@@ -7,6 +7,7 @@ venv/
 
 # transient run output
 data/run_log.txt
+data/backfill_run.log
 
 # Excel lock files
 ~$*.xlsx
@@ -22,6 +23,27 @@ secrets.*
 Thumbs.db
 .DS_Store
 
-# NOTE: data/raw/*.pdf, data/raw_reports.csv, data/listing_inventory.csv and
-# output/AMX_Buybacks.xlsx ARE committed on purpose. The PDFs are the primary
-# evidence for the backfill and the ledger is append-only history.
+# NOTE: data/raw/*.pdf, data/raw_reports.csv, data/listing_inventory.csv,
+# data/listing_rowcount_highwater.json and output/* ARE committed on purpose.
+#
+#   - the PDFs are the primary evidence for the backfill
+#   - the ledger is append-only history, and the future weekly Action reads it
+#     for prior state and writes the updated version back
+#   - the high-water mark must survive a fresh clone, or the shrink guard
+#     silently re-baselines on the first run after cloning
+#
+# RULING 7, 2026-08-05 - the Architect REVERSED the earlier governance
+# decision that would have gitignored data/raw/*.pdf. The PDFs STAY COMMITTED:
+# they are the evidence any figure can be re-derived from, and 342 of them
+# were already in history, so ignoring them would have stopped tracking new
+# PDFs without removing the old ones - the worst of both. History was NOT
+# rewritten.
+#
+# SIZE, measured 2026-08-05: 342 PDFs, 31.2 MB, mean 94 KB each. (An earlier
+# note in this file said "~4 MB"; that was the pre-backfill figure of 39 PDFs
+# and was carried forward without re-measuring. Corrected here.)
+#
+# REVISIT at 100 MB of PDFs. At 94 KB each that is ~1,094 reports: about 18
+# more years at the current selection rate (~60/yr - weekly plus month-end),
+# or about 4 years if the selection ever widened to every trading day. At that
+# point move them to a release asset or LFS rather than dropping the evidence.

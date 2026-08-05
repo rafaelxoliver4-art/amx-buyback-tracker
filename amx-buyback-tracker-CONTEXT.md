@@ -3,15 +3,17 @@
 The standing brief for this project. **Bar: someone reading only this file
 could rebuild the repo from scratch.** Read this before changing anything.
 
-**Current as of 2026-08-05.** Cycles 0 and 1 are complete; both acceptance
-fixtures pass and 41 tests pass. Local git only — no remote, no Actions, no
-email, no secrets. For what is *decided* see §10; for what is *outstanding*
-see the decisions list at the top of
-[`amx-buyback-tracker-PROGRESS.md`](amx-buyback-tracker-PROGRESS.md).
+**Current as of 2026-08-05.** Cycles 0, 1 and 2 are complete; both acceptance
+fixtures pass and 56 tests pass. Local git only — no remote, no Actions, no
+email, no secrets. For what is *decided* see §10.
 
-Two things in this file are **spec, not built** — both are marked in place:
-the stronger listing-shrink guard and the 5,000-row revisit (§7), and the
-backfill scope is recorded as **unresolved** (§7.2).
+The nine rulings of 2026-08-05 are recorded in §10. Seven are implemented,
+including **two reversals** — the full backfill stands (§7.2) and the PDFs
+stay committed. Two remain open: confirming the five programme additions, and
+whether the 2023-03-17 series-B floor is permanent.
+
+Everything described in this file is **built**, unless a heading says
+otherwise.
 
 ---
 
@@ -267,7 +269,48 @@ entry's `source:` text.
 
 **None has been confirmed against an AGM resolution.** The resolution is not
 in the recompras PDFs; it would be in BMV's "Eventos Relevantes" / "Asambleas"
-section, which Cycle 1 was told not to scrape.
+section, which Cycle 1 was told not to scrape. Ruling 2 (2026-08-05) makes the
+seam the standard of evidence: an addition isolated to the peso is trusted,
+and automated AGM scraping is revisited only if the **seam stops being
+measurable** — not if an amount stops being round.
+
+### 6.2 The programme-REDUCTION guard (ruling 8)
+
+Additions are handled. The opposite — a cancellation that **lowers** the
+remanente — is arithmetically identical to a buyback and would otherwise pass
+in silence. It betrays itself as an absurd **implied average price**: cash
+leaves while few or no shares are retired.
+
+`integrity.implied_price_band` bands it. **ALERT only — the row is never
+suppressed and never adjusted.** Three ways it can fire:
+
+| Check | Catches |
+|---|---|
+| outside `min_mxn`..`max_mxn` | a gross reduction, a unit error, a sign error |
+| more than `max_ratio_vs_median` from the trailing-12 median | a smaller reduction that still sits inside the absolute band |
+| cash moved with **zero** shares retired | a reduction that divides by zero and so has no price at all |
+
+**The band is calibrated from the observed data, not assumed** (2026-08-05,
+177 weekly and 41 monthly periods over 2023-03..2026-08):
+
+| | weekly | monthly |
+|---|---|---|
+| min | 14.17 | 14.40 |
+| median | 16.40 | 16.26 |
+| max | 24.38 | 22.75 |
+
+Worst legitimate deviation from the trailing-12 median: **1.316×**.
+
+- `min_mxn: 5.0` — 2.8× below the observed minimum. Only an order-of-magnitude
+  or sign error reaches it.
+- `max_mxn: 60.0` — 2.5× above the observed maximum, and far above any
+  plausible AMX B price. A backstop for when the median has itself drifted.
+- `max_ratio_vs_median: 2.0` — against a worst legitimate 1.316×, a **52%
+  margin**. This is the sharp instrument; the absolute band is the blunt one.
+
+A test asserts the band is wider than everything observed, and another asserts
+it stays silent across the whole real series — a guard that cries wolf is
+worse than none.
 
 ## 7. Which reports we download
 
@@ -302,30 +345,51 @@ instead, in `listing.guards`:
 
 - **ALERT if the response exceeds 10 MB.** It is ~958 KB today and grows about
   250 rows a year, forever.
-- **ALERT if it returns fewer rows than the previous run recorded.** History
-  should only ever grow; a shrinking listing is a red flag. Existing data is
-  left untouched either way.
+- **ALERT if it returns fewer rows than the HIGH-WATER MARK** — the highest
+  count ever recorded, not the previous run's (ruling 3). A new high raises
+  the mark; a shrink never lowers it. The previous-run version was weaker: one
+  shrink was written to `listing_inventory.csv` and the next run adopted the
+  lower number as its baseline, so the alarm went quiet after a single bad
+  day. Existing data is left untouched either way.
+- **Revisit the no-cap decision at 5,000 rows** — ~1,255 today, +250 a year.
+  Reaching it raises an INFO notice; the review is triggered by the count, not
+  by a date.
 
-**SPEC — not yet implemented, lands in a later cycle.** Two parts of the
-2026-08-04 ruling on listing growth are not built:
-
-- The row-count guard must compare against the **highest count ever
-  recorded**, not the previous run's. As shipped, a listing that shrinks once
-  writes the lower count to `listing_inventory.csv`, and the next run adopts
-  it as the new baseline and stops complaining. A high-water mark has to be
-  stored separately for the guard to survive that.
-- **Revisit the no-cap decision at 5,000 rows.** ~1,255 today, +250 a year, so
-  roughly 2041 — but the review is triggered by the count, not the date.
+The mark lives in `data/listing_rowcount_highwater.json` and is **committed,
+not gitignored**, for the same reason the ledger is: gitignored, the first run
+after a fresh clone would start from no mark, accept whatever the listing
+returned and silently adopt a shrunken history as its baseline — precisely the
+failure the ratchet exists to prevent.
 
 Cache: a PDF whose sha256 we already hold is never re-downloaded.
 
-### 7.2 Backfill scope — UNRESOLVED
+### 7.2 Backfill scope — RESOLVED, the full history stands
 
-The 2026-08-04 ruling said **2026 only**. Cycle 1 was then instructed to
-backfill the **full listing history** and did. The repo holds the full
-backfill; the chart starts Apr-2023. **The two instructions conflict and the
-Architect has not yet chosen between them.** Nothing has been deleted. Treat
-the current full-history scope as provisional until that is settled.
+Ruling **1** (2026-08-05) settled this: **the full 2021→present backfill
+stands**, reversing the 2026-only ruling Q2. Scope is a **view**, not a
+deletion — see `display.start_year` in §7.3.
+
+### 7.3 The display window (ruling 1)
+
+```yaml
+display:
+  start_year: null      # null = all history; 2026 = show 2026 onward only
+```
+
+Filters the **Weekly, Monthly, YTD and chart output only**. It can never touch
+`data/raw_reports.csv`, `listing_inventory.csv` or the acceptance test, and a
+test asserts the ledger file is byte-identical with the filter set.
+
+Two ordering details that make it safe:
+
+- the **derivation runs first**, so the earliest visible period still carries
+  the buyback measured from its now-hidden predecessor;
+- the **YTD denominator** (shares outstanding at 31-Dec of the prior year) is
+  read from the *unfiltered* frame, or a window starting in the current year
+  would hide the row it comes from.
+
+Setting it raises an INFO notice recording how many rows were hidden, so a
+short workbook is never mistaken for missing data.
 
 ## 7.1 Never a silent gap (ruling 4)
 
@@ -552,6 +616,85 @@ which ties **exactly** to the true 31-Jul → 30-Sep window
   it; at 300+ PDFs that was five minutes a probe.
 - **The chart PNG renders before the Excel chart**, each in its own guard, so
   a native-chart failure cannot cost the PNG or the workbook.
+
+### 2026-08-05 — the nine rulings
+
+Answering the nine decisions raised at the top of
+[`amx-buyback-tracker-PROGRESS.md`](amx-buyback-tracker-PROGRESS.md). **Two of
+these reverse earlier decisions — both reversals are recorded explicitly
+below.**
+
+| # | Ruling | Rationale | Status |
+|---|---|---|---|
+| **1** | **The full backfill STANDS.** A `display.start_year` toggle filters the *output* instead. | A view costs nothing and is reversible; deleting three years of evidence is not. | **Implemented** |
+| **2** | **Ruling Q1's revisit trigger was wrong** and is replaced by a seam-measurability test. | See below. | **Implemented** (policy corrected) |
+| **3** | **Ratchet the row-count guard** to a high-water mark. | One shrink used to become the new baseline and the alarm went quiet. | **Implemented** |
+| **4** | **Ship the scraped figures.** The owner's table is not amended to match, and its 11 declared errors stand as declared. | The primary source wins; this is the standing governance rule (§9). | **Standing policy**, already in force |
+| **5** | *No ruling stated* on confirming the five programme additions. | — | **Still open** |
+| **6** | *No ruling stated* on the 2023-03-17 series-B floor. | — | **Still open** |
+| **7** | **The PDFs STAY COMMITTED.** Reverses the earlier gitignore governance decision. | 31 MB is cheap for a git repo; they are the evidence every figure re-derives from. | **Implemented** |
+| **8** | **Add a programme-reduction guard** — a sanity band on the implied average price. | A cancellation that lowers the remanente is arithmetically identical to a buyback. | **Implemented** |
+| **9** | **Thin the chart labels** beyond 24 points, always keeping first, last, min and max. | 41 months of 45° labels collide. | **Implemented** |
+
+#### Reversal 1 — the backfill scope (ruling 1 supersedes ruling Q2)
+
+Ruling **Q2** (2026-08-04) said **2026 only**. Ruling **1** (2026-08-05)
+**reverses it: the full 2021→present backfill stands.** §7.2's "unresolved" is
+now resolved in favour of the full history.
+
+Scope is handled as a **view**, never a deletion:
+`display.start_year: null` shows everything; `2026` shows 2026 onward. It
+filters the Weekly, Monthly, YTD and chart **output only** and can **never**
+touch `data/raw_reports.csv`, the inventory or the acceptance test — a test
+asserts the ledger is byte-identical with the filter set. The derivation runs
+*before* the filter, so the first visible period keeps the buyback measured
+from its hidden predecessor, and the YTD denominator still reads prior-year
+shares outstanding from the unfiltered frame.
+
+#### Reversal 2 — the PDFs stay committed (ruling 7 supersedes the 2026-08-04 governance decision)
+
+The 2026-08-04 governance decision listed `data/raw/*.pdf` as gitignored.
+Ruling **7 reverses that.** They are the evidence behind every reported
+figure, and 342 PDFs were already in history — ignoring them would have
+stopped tracking new ones without removing the old, the worst of both.
+**History was not rewritten.**
+
+**Measured 2026-08-05: 342 PDFs, 31.2 MB, mean 94 KB.** *(An earlier note said
+"~4 MB". That was the pre-backfill figure — 39 PDFs — carried forward without
+re-measuring after the backfill added ~300 more. Corrected here and in
+`.gitignore`.)* 31 MB is unremarkable for a git repo and far below any
+GitHub threshold, so the ruling is unaffected.
+
+`.gitignore` records the reversal and a **100 MB revisit threshold** — at
+94 KB each, ~1,094 reports: about **18 more years** at the current selection
+rate (~60/yr, weekly plus month-end), or about **4 years** if selection ever
+widened to every trading day. At that point they move to a release asset or
+LFS rather than being dropped.
+
+#### Ruling 2 — the corrected revisit trigger
+
+Ruling **Q1** (2026-08-04) said to revisit automated AGM scraping *"only if
+additions ever stop being round numbers."*
+
+**That trigger was wrong, and it was already false when it was written.**
+Additions had *never* been reliably round: 2023-04-14 is **1,586,249,981** — a
+reset to a round *total* of 20.0bn rather than a round increment — and three
+of the other four seams carry a few pesos of BMV restatement drift (+66, +33,
++12). Taken literally the trigger fired immediately, which is not what it was
+meant to detect. Roundness was never the thing that mattered.
+
+**The correct trigger is seam measurability.** What actually makes an addition
+trustworthy is that the inter-report seam pins it **to the peso** —
+yesterday's `al presente` against today's `al último reporte` — which is
+stronger evidence than a published resolution, round or not.
+
+> **Revisit automated AGM scraping only if the seam stops being measurable** —
+> i.e. an addition can no longer be isolated to the peso from two consecutive
+> reports. That would mean the daily probe has genuinely run out of evidence
+> and an external source is the only remaining option.
+
+Roundness stays useful as *corroboration* and is recorded in each entry's
+`source:` text. It is no longer a trigger for anything.
 
 ### 2026-08-05 — the two living files are named after the project
 

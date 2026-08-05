@@ -22,6 +22,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import build_chart  # noqa: E402
 import build_series  # noqa: E402
+import fetch_reports  # noqa: E402
 from common import RunLog, load_config  # noqa: E402
 
 CFG = load_config()
@@ -172,7 +173,12 @@ def test_every_unconfirmed_addition_has_notes_saying_what_would_confirm_it():
 def test_listing_guards_are_configured():
     g = CFG["listing"]["guards"]
     assert g["max_response_bytes"] == 10 * 1024 * 1024
-    assert g["alert_if_fewer_rows_than_previous"] is True
+    # ruling 3 (2026-08-05) replaced the previous-run comparison with a ratchet
+    assert g["alert_if_fewer_rows_than_high_water"] is True
+    assert g["row_count_high_water_file"]
+    assert g["revisit_cap_at_rows"] == 5000
+    assert "alert_if_fewer_rows_than_previous" not in g, \
+        "the superseded previous-run guard is still configured"
 
 
 def test_no_cap_on_how_much_of_the_listing_is_parsed():
@@ -243,6 +249,189 @@ def test_full_fixture_months_are_all_present_in_the_monthly_frame():
     missing = [str(e["date"]) for e in spec["rows"]
                if (e["date"].year, e["date"].month) not in have]
     assert not missing, f"months in the fixture with no scraped row: {missing}"
+
+
+# --------------------------------------------------------------------------
+# 2026-08-05 ruling 1 - the display window is a VIEW, never a deletion
+# --------------------------------------------------------------------------
+def test_display_filter_trims_the_view():
+    frame = _synthetic([dt.date(2025, 12, 31), dt.date(2026, 1, 30), dt.date(2026, 2, 27)])
+    cfg = {**CFG, "display": {"start_year": 2026}}
+    out = build_series.apply_display_filter(cfg, frame)
+    assert [r["date"].year for r in out] == [2026, 2026]
+
+
+def test_display_filter_is_a_no_op_when_unset():
+    frame = _synthetic([dt.date(2025, 12, 31), dt.date(2026, 1, 30)])
+    for cfg in ({**CFG, "display": {"start_year": None}}, {k: v for k, v in CFG.items() if k != "display"}):
+        assert build_series.apply_display_filter(cfg, frame) == frame
+
+
+def test_display_filter_never_touches_the_ledger():
+    """The whole point of ruling 1: it is a view. Setting start_year must not
+    change data/raw_reports.csv by a single row."""
+    import parse_report
+    path = REPO_ROOT / CFG["paths"]["ledger_csv"]
+    before_rows = len(parse_report.read_ledger(CFG))
+    before_bytes = path.read_bytes()
+
+    cfg = {**CFG, "display": {"start_year": 2026}}
+    log = _Log()
+    weekly, monthly = build_series.build(cfg, log, probe=False)
+    build_series.apply_display_filter(cfg, weekly)
+    build_series.apply_display_filter(cfg, monthly)
+
+    assert len(parse_report.read_ledger(CFG)) == before_rows
+    assert path.read_bytes() == before_bytes, "ledger changed under a display filter"
+
+
+def test_display_filter_does_not_reach_the_acceptance_fixtures():
+    """A view must not be able to move a reported figure."""
+    log = _Log()
+    _w, full = build_series.build(CFG, log, probe=False)
+    if not full:
+        pytest.skip("ledger is empty")
+    cfg = {**CFG, "display": {"start_year": 2026}}
+    view = build_series.apply_display_filter(cfg, full)
+    by_date = {r["date"]: r for r in full}
+    for r in view:
+        assert r["buyback_mxn"] == by_date[r["date"]]["buyback_mxn"]
+        assert r["shares_bought"] == by_date[r["date"]]["shares_bought"]
+
+
+# --------------------------------------------------------------------------
+# 2026-08-05 ruling 3 - the row-count ratchet
+# --------------------------------------------------------------------------
+def test_row_count_ratchet_alerts_below_the_high_water_mark(tmp_path):
+    cfg = _ratchet_cfg(tmp_path)
+    log = _Log()
+    fetch_reports.check_row_count_ratchet(cfg, 1255, log)      # sets the mark
+    assert not log.alerts
+    fetch_reports.check_row_count_ratchet(cfg, 1200, log)      # a shrink
+    assert len(log.alerts) == 1
+    assert "FEWER" in log.alerts[0]
+    # the mark must NOT have been lowered by the shrink
+    assert fetch_reports.read_high_water(cfg) == 1255
+
+
+def test_row_count_ratchet_raises_on_a_new_high(tmp_path):
+    cfg = _ratchet_cfg(tmp_path)
+    log = _Log()
+    fetch_reports.check_row_count_ratchet(cfg, 1255, log)
+    fetch_reports.check_row_count_ratchet(cfg, 1300, log)
+    assert fetch_reports.read_high_water(cfg) == 1300
+    assert not log.alerts
+
+
+def test_row_count_ratchet_survives_a_shrink_then_alerts_again(tmp_path):
+    """The weakness of the previous-run version: one shrink used to become the
+    new baseline and the alarm went quiet. It must not."""
+    cfg = _ratchet_cfg(tmp_path)
+    log = _Log()
+    fetch_reports.check_row_count_ratchet(cfg, 1255, log)
+    fetch_reports.check_row_count_ratchet(cfg, 1200, log)
+    fetch_reports.check_row_count_ratchet(cfg, 1200, log)      # still below
+    assert len(log.alerts) == 2, "the ratchet went quiet after one shrink"
+
+
+def _ratchet_cfg(tmp_path):
+    """An absolute path under pytest's tmp_path, so the real
+    data/listing_rowcount_highwater.json is never touched and no artefact is
+    left in the repo. repo_path() passes an absolute `rel` straight through."""
+    p = tmp_path / "hw_test.json"
+    return {**CFG, "listing": {**CFG["listing"], "guards": {
+        **CFG["listing"]["guards"], "row_count_high_water_file": str(p)}}}
+
+
+# --------------------------------------------------------------------------
+# 2026-08-05 ruling 8 - the programme-reduction guard
+# --------------------------------------------------------------------------
+def _priced(dates_prices):
+    rows = []
+    for i, (d, px) in enumerate(dates_prices):
+        rows.append({"date": d, "avg_price": px, "buyback_mxn": int((px or 0) * 1_000_000),
+                     "shares_bought": 1_000_000 if px else 0, "is_anchor": False})
+    return rows
+
+
+def test_reduction_guard_is_quiet_on_the_real_series():
+    """It must not cry wolf on three years of genuine data."""
+    log = _Log()
+    weekly, monthly = build_series.build(CFG, log, probe=False)
+    if not monthly:
+        pytest.skip("ledger is empty")
+    codes = [n["code"] for n in log.notices
+             if n["code"].startswith("IMPLIED_PRICE")]
+    assert not codes, f"the price band fires on real data: {codes}"
+
+
+def test_reduction_guard_catches_a_synthetic_cancellation():
+    """A cancellation drains the remanente without retiring shares, so the
+    implied price explodes."""
+    base = [(dt.date(2026, 1, 5 + i), 16.0) for i in range(10)]
+    rows = _priced(base + [(dt.date(2026, 3, 2), 950.0)])   # a 950 MXN "price"
+    log = _Log()
+    build_series.check_implied_price_band(CFG, rows, "weekly", log)
+    assert log.alerts, "a programme reduction went undetected"
+    assert any(n["code"] == "IMPLIED_PRICE_BAND" for n in log.notices)
+
+
+def test_reduction_guard_catches_a_deviation_inside_the_absolute_band():
+    """A smaller cancellation stays under max_mxn but still doubles the
+    trailing median - the ratio test is the sharp instrument."""
+    base = [(dt.date(2026, 1, 5 + i), 16.0) for i in range(10)]
+    rows = _priced(base + [(dt.date(2026, 3, 2), 45.0)])
+    band = CFG["integrity"]["implied_price_band"]
+    assert band["min_mxn"] < 45.0 < band["max_mxn"], "fixture must sit inside the band"
+    log = _Log()
+    build_series.check_implied_price_band(CFG, rows, "weekly", log)
+    assert any(n["code"] == "IMPLIED_PRICE_DEVIATION" for n in log.notices)
+
+
+def test_reduction_guard_catches_cash_out_with_zero_shares():
+    """avg_price is None when no shares move, so the band alone would miss it."""
+    rows = [{"date": dt.date(2026, 3, 2), "avg_price": None,
+             "buyback_mxn": 5_000_000_000, "shares_bought": 0, "is_anchor": False}]
+    log = _Log()
+    build_series.check_implied_price_band(CFG, rows, "monthly", log)
+    assert any(n["code"] == "IMPLIED_PRICE_NO_SHARES" for n in log.notices)
+
+
+def test_price_band_is_calibrated_wider_than_everything_observed():
+    log = _Log()
+    weekly, monthly = build_series.build(CFG, log, probe=False)
+    if not monthly:
+        pytest.skip("ledger is empty")
+    band = CFG["integrity"]["implied_price_band"]
+    px = [r["avg_price"] for r in weekly + monthly if r.get("avg_price")]
+    assert band["min_mxn"] < min(px), "floor is inside the observed range"
+    assert band["max_mxn"] > max(px), "ceiling is inside the observed range"
+
+
+# --------------------------------------------------------------------------
+# 2026-08-05 ruling 9 - chart label density
+# --------------------------------------------------------------------------
+def test_label_stride_thins_a_long_series_but_keeps_the_extremes():
+    dl = CHART["line"]["data_labels"]
+    vals = [0.10] + [0.05] * 38 + [0.30, 0.02]        # 41 points, max at 39
+    keep = build_chart.label_indices(dl, vals)
+    assert len(keep) < len(vals), "a 41-point series was not thinned"
+    assert 0 in keep and len(vals) - 1 in keep, "first/last dropped"
+    assert vals.index(max(vals)) in keep, "max dropped"
+    assert vals.index(min(vals)) in keep, "min dropped"
+
+
+def test_label_stride_keeps_every_point_on_a_short_series():
+    dl = CHART["line"]["data_labels"]
+    vals = [0.05 + i / 1000 for i in range(20)]       # under auto_threshold
+    assert build_chart.label_indices(dl, vals) == set(range(20))
+
+
+def test_label_density_config_is_present():
+    dl = CHART["line"]["data_labels"]
+    assert dl["label_every_n"] == "auto"
+    assert dl["auto_threshold"] == 24
+    assert set(dl["always_label"]) == {"first", "last", "min", "max"}
 
 
 def test_cycle0_fixture_is_untouched():

@@ -14,63 +14,200 @@ standing brief.
 
 | | |
 |---|---|
-| Cycles complete | **0** (recon + scaffold), **1** (full backfill, styling, chart) |
+| Cycles complete | **0** (recon + scaffold), **1** (backfill, styling, chart), **2** (the nine rulings) |
 | Ledger | **536 rows**, append-only, serie B from 2023-03-17 |
 | PDFs held | 331, all parsed, **0 unparsed** |
 | Acceptance test | **2026 fixture PASS · full-history fixture PASS (32/32 rows)** |
-| Test suite | **41 passed** |
+| Test suite | **56 passed** |
 | Deliverables | `output/AMX_Buybacks.xlsx` (6 sheets), `output/amx_buybacks_chart.png` |
 
-### Not done, by instruction
+### Not done — one blocked, the rest by instruction
 
-No remote, no GitHub repo, no push, no Actions, no email, no credential or
-secret of any kind. `git remote -v` is empty. Local git only, 6 commits.
+**BLOCKED: the first push.** `gh auth status` reports not logged in, so the
+repo was not created and nothing was pushed — stopped exactly as the task
+requires. No token, password or SSH key was requested, created, read or
+stored. **Authentication is the owner's to arrange:** run `gh auth login`,
+then step 8 of Cycle 2 is the only work left to publish.
 
-### DECISIONS NEEDED FROM THE ARCHITECT
+Not done by instruction: no Actions, no workflow file, no email, no repo
+secret. `git remote -v` is empty. Local git only.
 
-Ordered by what blocks the most work. Items 1–3 arise because the 2026-08-04
-rulings were written against the end of Cycle 0, but Cycle 1 had already been
-commissioned and built.
+### THE NINE RULINGS — settled 2026-08-05
 
-1. **Backfill scope — the one real conflict.** Ruling Q2 says **2026 only**;
-   Cycle 1's own brief said **full history**, and that is what shipped. The
-   chart runs Apr-2023 → Aug-2026 and already spans the three years the
-   owner's reference chart covers. **Nothing has been deleted.** Confirm the
-   full history stands, or say the word and it gets trimmed back to 2026.
-   Everything else in this list is smaller than this one.
-2. **Ruling Q1's revisit trigger has already fired.** Q1 says revisit
-   automated AGM scraping "only if additions ever stop being round numbers."
-   They have: 2023-04-14 is **1,586,249,981** — a reset to a round *total* of
-   20.0bn, not a round increment — and three of the other four seams carry a
-   few pesos of BMV drift. Revisit, or leave it manual?
-3. **Q3's row-count guard is the weaker version.** Shipped: compares against
-   the **previous run's** count. Ruled: the **highest ever** recorded. As
-   built, one shrink becomes the new baseline and the alarm goes quiet.
-   Recorded as spec in CONTEXT §7, not built. Build it next cycle?
-4. **The owner's table has 11 errors; we ship the scraped figures.** Four root
-   causes, each declared with evidence in
-   `tests/expected_backfill_full.yaml`. The material one: **the Sep-2024 row
-   re-counts most of August**, overstating that period by **435 mn MXN /
-   27.2 mn shares**. Confirm we publish the scraped figure — it changes any
-   previously published FY2024 total.
-5. **Five programme additions are unconfirmed.** All `confirmed_by_owner:
-   false`, each emitting one INFO per run by design. Confirming them needs the
-   AGM resolutions, which are not in the recompras PDFs. Confirm by hand, or
-   authorise the scraper in item 2?
-6. **The series-B floor.** The derived series **cannot start before
-   2023-03-17** — before that AMX filed series A, AA and L and no B at all.
-   Permanent floor, or should a later cycle splice the old series in?
-7. **Before the push cycle: the PDF question.** The governance ruling
-   gitignores `data/raw/*.pdf`, but the repo **commits** them today and
-   `.gitignore` says that is deliberate ("the primary evidence for the
-   backfill"). 331 PDFs (~4 MB) are already in history, so adding the rule
-   later stops tracking new ones without removing the old. Which way?
-8. **A programme *reduction* would pass silently.** Additions are handled; a
-   cancellation that *lowered* the remanente is indistinguishable from a
-   buyback. Worth a guard?
-9. **Chart density.** 41 months of 45°-rotated labels collide in the busy
-   stretches. Match-the-house-style says leave it. Leave, or label every other
-   point?
+Seven implemented, two still open. Full text and rationale in CONTEXT §10.
+
+| # | Ruling | Status |
+|---|---|---|
+| 1 | Full backfill **stands**; `display.start_year` is a view (reverses Q2) | **Done** |
+| 2 | Revisit trigger corrected to **seam measurability** | **Done** |
+| 3 | Row-count guard **ratcheted** to a high-water mark | **Done** |
+| 4 | **Ship the scraped figures**; the owner's 11 declared errors stand | **Standing policy** |
+| 5 | Confirming the five programme additions | **OPEN — no ruling stated** |
+| 6 | Whether the 2023-03-17 series-B floor is permanent | **OPEN — no ruling stated** |
+| 7 | PDFs **stay committed**, 100 MB revisit (reverses the gitignore decision) | **Done** |
+| 8 | Programme-**reduction** guard, band calibrated from observed data | **Done** |
+| 9 | Chart labels thinned beyond 24 points, extremes kept | **Done** |
+
+**Two reversals**, both recorded explicitly in CONTEXT §10: the full backfill
+stands, and the PDFs stay committed.
+
+**Nothing moved.** Both acceptance fixtures are byte-identical to Cycle 1 and
+every workbook cell is unchanged.
+
+---
+
+## Cycle 2 — 2026-08-05 — the nine rulings settled; push BLOCKED on auth
+
+### Handed off
+
+Implement the four fixes the rulings call for, record all nine in the standing
+brief, then create the private GitHub repo and push.
+
+### What came back
+
+**Status: steps 1–7 and 9 complete. Step 8 (publish) BLOCKED — `gh` is not
+authenticated. Nothing was pushed; no remote exists.**
+
+**No reported figure moved.** Both acceptance fixtures produce output
+**byte-identical** to Cycle 1, and every cell of Raw, Weekly, Monthly and YTD
+is unchanged. 56 tests pass (41 → 56; 15 new).
+
+#### Ruling 1 — the display window
+
+`display.start_year` in `config/sources.yaml`. `null` = all history, `2026` =
+2026 onward. It filters the **Weekly, Monthly, YTD and chart output only**.
+
+Two ordering details make it safe: the derivation runs **before** the filter,
+so the earliest visible period keeps the buyback measured from its hidden
+predecessor; and the YTD denominator is read from the **unfiltered** frame, or
+a 2026 window would hide the 31-Dec-2025 row it comes from.
+
+Four tests, including one that asserts `data/raw_reports.csv` is
+**byte-identical** with the filter set, and one that asserts a filtered row's
+`buyback_mxn` and `shares_bought` match the unfiltered frame exactly.
+
+#### Ruling 3 — the row-count ratchet
+
+High-water mark in `data/listing_rowcount_highwater.json`, **committed, not
+gitignored**. Gitignored, the first run after a fresh clone would start from no
+mark, accept whatever the listing returned and adopt a shrunken history as its
+baseline — exactly the failure the ratchet prevents. Same reasoning as the
+ledger.
+
+Three tests: a shrink alerts and does **not** lower the mark; a new high raises
+it; and a shrink that persists keeps alerting — the specific weakness of the
+previous-run version, where one bad day silently became the new normal.
+
+#### Ruling 8 — the programme-reduction guard, and the band I chose
+
+**Observed range, measured rather than assumed** (177 weekly + 41 monthly
+periods, 2023-03..2026-08):
+
+| | weekly | monthly |
+|---|---|---|
+| min | 14.17 | 14.40 |
+| median | 16.40 | 16.26 |
+| max | 24.38 | 22.75 |
+
+Worst legitimate deviation from the trailing-12 median: **1.316×**
+(2025-11-28, 21.10 against a median of 16.04 — a genuine move as the stock
+re-rated, not an error).
+
+| Parameter | Chosen | Why |
+|---|---:|---|
+| `min_mxn` | **5.0** | 2.8× below the observed minimum. Only an order-of-magnitude or sign error reaches it; no market move will. |
+| `max_mxn` | **60.0** | 2.5× above the observed maximum and far above any plausible AMX B price. A backstop for when the trailing median has itself drifted. |
+| `max_ratio_vs_median` | **2.0** | Against a worst legitimate 1.316×, a **52% margin**. The sharp instrument; the absolute band is the blunt one. |
+| `zero_share_spend_alert_mxn` | **1,000,000** | A reduction with no shares retired divides by zero and produces no price, so the band alone would miss it entirely. |
+
+**I checked the Architect's suggested 5.0 / 60.0 / 2.0 against the data rather
+than taking them on faith, and they hold up** — every one clears the observed
+range with margin to spare. The one thing they did not cover was the
+divide-by-zero case, which is why the fourth parameter exists.
+
+Five tests: silent across the whole real series (a guard that cries wolf is
+worse than none), catches a gross cancellation, catches a smaller one that
+stays inside the absolute band but doubles the median, catches cash-out with
+zero shares, and asserts the band is wider than everything observed.
+
+#### Ruling 9 — chart label density
+
+`label_every_n: auto` in `config/chart.yaml`: every point up to 24, every
+second beyond, with **first, last, min and max always kept**. At 41 months
+that is **22 of 41** labels. No hex colour entered `build_chart.py`; the grep
+test still passes.
+
+Both renders agree. openpyxl does not model OOXML's `<c:delete>` on an
+individual data label, so the dropped points get an explicit `showVal=False`
+instead — which *is* modelled and blanks them just the same. Verified by
+reading the saved workbook back: 19 of 41 points blanked, 22 shown.
+
+#### Ruling 7 — .gitignore
+
+The PDFs stay committed; no history rewritten. `.gitignore` records the
+reversal, the reason (they are the evidence every figure re-derives from), and
+a **100 MB revisit threshold**.
+
+**I had the size wrong and corrected it.** I wrote "~4 MB" into three files;
+the real corpus is **31.2 MB across 342 PDFs, mean 94 KB**. The "~4 MB" was
+the pre-backfill figure — 39 PDFs — carried forward without re-measuring after
+the backfill added ~300 more. The ruling is unaffected (31 MB is unremarkable
+for a git repo), but the revisit arithmetic changes materially: 100 MB is
+~1,094 reports, i.e. **~18 more years** at the current ~60/yr selection rate,
+not the ~30 years I first wrote — and only **~4 years** if selection ever
+widened to every trading day.
+
+Also found by the pre-publish inspection: **`data/backfill_run.log` (0.21 MB)
+was tracked.** It is a transient run log of the same class as
+`data/run_log.txt`, which has always been ignored — an oversight from Cycle 1.
+It is now gitignored and untracked going forward. History was **not**
+rewritten, so the existing copy stays in past commits.
+
+#### Rulings 2, 4, 5, 6
+
+- **2 — the revisit trigger was wrong**, and is corrected in CONTEXT §10.
+  "Revisit if additions stop being round" was *already false when written*:
+  2023-04-14 is 1,586,249,981, a reset to a round total rather than a round
+  increment, and three other seams carry a few pesos of drift. Taken literally
+  it fired immediately. **The correct trigger is seam measurability** — an
+  addition pinned to the peso by two consecutive reports is better evidence
+  than a published resolution, round or not.
+- **4 — ship the scraped figures.** Already the standing rule (CONTEXT §9) and
+  restated as a guardrail on this cycle. The 11 declared errors in the owner's
+  table stand as declared.
+- **5 and 6 — no ruling was stated in this task.** Confirming the five
+  programme additions, and whether the 2023-03-17 series-B floor is permanent,
+  remain open. Recorded as open rather than resolved; nothing was invented.
+
+#### How it was verified
+
+1. **The acceptance output was captured before and after**, by `git stash`ing
+   the cycle's changes and re-running against the Cycle 1 code. The two files
+   are byte-identical.
+2. **Every workbook cell was diffed** — Raw (537 rows), Weekly (179), Monthly
+   (43) and YTD (12), all four identical cell for cell.
+3. The Excel chart was **read back from the saved file** to confirm the label
+   thinning survived serialisation, rather than trusting the write.
+
+#### Step 8 — PUBLISH: BLOCKED
+
+```
+$ gh auth status
+You are not logged into any GitHub hosts. To log in, run: gh auth login
+```
+
+**Stopped exactly as instructed.** No repo created, no remote added, nothing
+pushed. No token, password or SSH key was requested, created, read or stored,
+and none will be — authentication is the owner's to arrange.
+
+Everything else is done and committed locally, so the push is a single step
+once `gh auth login` has been run by the owner.
+
+### Next
+
+The owner runs `gh auth login`; then step 8 alone — create the private repo,
+verify it is private, push the full history unsquashed. After that, Cycle 3:
+the email body and the weekly unattended run.
 
 ---
 
