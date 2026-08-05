@@ -126,12 +126,23 @@ def fetch_inventory(cfg: dict, sess: PoliteSession, log: RunLog) -> list[dict]:
     """One GET -> every recompras row ever published for this issuer."""
     url = listing_url(cfg)
     log.info(f"listing: GET {url}")
+    previous_rows = len(read_inventory(cfg))     # before we overwrite it
     resp = sess.get(url)
     if resp.status_code != 200:
-        log.alert(f"listing returned HTTP {resp.status_code} - no inventory")
+        log.alert(f"listing returned HTTP {resp.status_code} - no inventory",
+                  code="LISTING_HTTP")
         return []
 
     lc = cfg["listing"]
+    # --- guards (ruling 3): no cap on what we parse, but shout if the
+    #     response balloons or the history shrinks ---------------------------
+    guards = lc.get("guards") or {}
+    size = len(resp.content)
+    cap = guards.get("max_response_bytes")
+    if cap and size > cap:
+        log.alert(f"listing response is {size:,} bytes, over the "
+                  f"{cap:,}-byte guard - the one-GET inventory is outgrowing itself",
+                  code="LISTING_TOO_BIG")
     parser = _RecompraListingParser(cfg)
     parser.feed(resp.text)
 
@@ -162,7 +173,13 @@ def fetch_inventory(cfg: dict, sess: PoliteSession, log: RunLog) -> list[dict]:
             )
 
     inventory.sort(key=lambda r: (r["report_date"], r["published_at"]))
-    log.info(f"listing: {len(inventory)} recompras rows ({skipped} non-recompras rows ignored)")
+    log.info(f"listing: {len(inventory)} recompras rows ({skipped} non-recompras rows ignored), "
+             f"{size:,} bytes")
+    if guards.get("alert_if_fewer_rows_than_previous") and previous_rows and len(inventory) < previous_rows:
+        log.alert(f"listing returned {len(inventory)} rows, FEWER than the "
+                  f"{previous_rows} recorded by the previous run - history should only "
+                  "ever grow. Existing data left untouched.",
+                  code="LISTING_SHRANK")
     return inventory
 
 

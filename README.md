@@ -20,6 +20,10 @@ pip install -r requirements.txt
 ## Run
 
 ```bash
+python src/backfill.py          # one-off, resumable: the FULL history 2021 -> today
+```
+
+```bash
 python src/fetch_reports.py     # walk the listing, download the selected PDFs
 ```
 
@@ -39,26 +43,35 @@ python src/verify_backfill.py   # acceptance test vs the owner's known-correct t
 python -m pytest tests -q       # unit + integrity tests
 ```
 
+`build_series.py` writes the workbook **and** the chart PNG in one pass.
+
 Useful flags:
 
+- `backfill.py --dry-run` — report what would be fetched and stop.
+- `backfill.py --limit N` — fetch at most N reports, resume later.
+- `backfill.py --from-cached-inventory` — skip the listing GET.
 - `fetch_reports.py --inventory-only` — refresh `data/listing_inventory.csv`
   and stop.
 - `fetch_reports.py --from-cached-inventory` — skip the listing GET.
 - `parse_report.py --dump <pdf>` — print every parsed field of one PDF.
 - `build_series.py --no-network` — don't probe daily reports on an unexplained
   remanente rise.
+- `build_chart.py` — re-render the PNG only, without rewriting the workbook.
 
 ## Layout
 
 ```
-config/    sources.yaml, program_additions.yaml, schedule.yaml, email.yaml
-src/       fetch_reports.py, parse_report.py, build_series.py, verify_backfill.py
+config/    sources.yaml, program_additions.yaml, chart.yaml,
+           schedule.yaml, email.yaml
+src/       backfill.py, fetch_reports.py, parse_report.py, build_series.py,
+           build_chart.py, verify_backfill.py
            common.py (config loading, polite HTTP, run log)
 data/raw/  downloaded PDFs, named <report_date>_<serie>.pdf
 data/      raw_reports.csv (append-only ledger), listing_inventory.csv
-output/    AMX_Buybacks.xlsx
+output/    AMX_Buybacks.xlsx, amx_buybacks_chart.png
 docs/      recon_notes.md, pdf_field_dump.md
-tests/     test_parser.py, test_integrity.py, expected_backfill_2026.yaml
+tests/     test_parser.py, test_integrity.py, test_series.py,
+           expected_backfill_2026.yaml, expected_backfill_full.yaml
 ```
 
 **Config over code**: every URL, selector, delay, retry count and date rule is
@@ -77,6 +90,6 @@ in `config/*.yaml`. Nothing of the sort belongs in Python.
 
 ## Status
 
-Cycle 0 complete — recon, scaffold and a verified 2026 backfill.
-Acceptance test passes on every value. Chart, email body and weekly
-automation are Cycles 1 and 2.
+Cycle 1 complete — full history backfilled to 2021, workbook styled, chart
+built. Both acceptance fixtures pass on every value. The email body and the
+weekly automation are Cycle 2.

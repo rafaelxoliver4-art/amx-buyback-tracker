@@ -482,47 +482,92 @@ def _ledger_row(cfg: dict, meta: dict, parsed: dict, blk: dict) -> dict:
     }
 
 
-def parse_all(cfg: dict, log: RunLog) -> list[dict]:
-    """Parse every PDF in data/raw and append new rows to the ledger."""
+def parse_all(cfg: dict, log: RunLog, reparse: bool = False) -> tuple[list[dict], int, list[str]]:
+    """Parse every PDF in data/raw and append new rows to the ledger.
+
+    Returns (rows, appended, unparsed_report_dates). A PDF that will not parse
+    is reported unparsed and left OUT - a number is never guessed.
+
+    By default a PDF whose report_date is already in the ledger is SKIPPED:
+    the ledger is append-only, so re-parsing it could only produce a row that
+    append_ledger would discard. With ~300 PDFs held this is the difference
+    between a five-minute pass and a two-second one, and it matters because
+    every programme-addition probe calls this. Pass reparse=True to force a
+    full re-read.
+    """
     import fetch_reports
 
     raw_dir = repo_path(cfg["paths"]["raw_pdf_dir"] + "/.keep").parent
     inv = {r["report_date"]: r for r in fetch_reports.read_inventory(cfg)}
-    expected = set(cfg["issuer"]["expected_series"])
+    ic = cfg["issuer"]
+    expected = set(ic["expected_series"])
+    # AMX's pre-consolidation series - declared, not a surprise. See sources.yaml.
+    historical = set(ic.get("historical_series") or [])
+    hist_until = ic.get("historical_series_until")
+    hist_until = dt.date.fromisoformat(str(hist_until)) if hist_until else None
+    hist_seen: dict[str, list[str]] = {}
 
-    rows, failures = [], 0
+    already = set() if reparse else {r["report_date"] for r in read_ledger(cfg)}
+
+    rows, unparsed, skipped = [], [], 0
     for pdf in sorted(raw_dir.glob("*.pdf")):
         report_date = pdf.stem.split("_")[0]
+        if report_date in already:
+            skipped += 1
+            continue
         meta = dict(inv.get(report_date, {}))
         meta["pdf_sha256"] = sha256_bytes(pdf.read_bytes())
         meta.setdefault("report_date", report_date)
         try:
             parsed = parse_pdf(pdf, cfg)
         except Exception as exc:
-            failures += 1
-            log.alert(f"UNPARSED {pdf.name}: {type(exc).__name__}: {exc}")
+            unparsed.append(report_date)
+            log.alert(f"UNPARSED {pdf.name}: {type(exc).__name__}: {exc}",
+                      code="UNPARSED", affected_date=report_date)
             continue
 
-        if len(parsed["series"]) > 1:
+        d = dt.date.fromisoformat(report_date)
+        is_historical = hist_until is not None and d <= hist_until
+        if len(parsed["series"]) > 1 and not is_historical:
             log.alert(f"{pdf.name}: {len(parsed['series'])} series in one report "
-                      f"{[b['serie'] for b in parsed['series']]}")
+                      f"{[b['serie'] for b in parsed['series']]}",
+                      code="MULTI_SERIE", affected_date=report_date)
         for blk in parsed["series"]:
-            if blk["serie"] not in expected:
-                log.alert(f"{pdf.name}: unexpected serie {blk['serie']!r}")
+            s = blk["serie"]
+            if s in expected:
+                pass
+            elif is_historical and s in historical:
+                hist_seen.setdefault(s, []).append(report_date)
+            else:
+                log.alert(f"{pdf.name}: unexpected serie {s!r}",
+                          code="UNEXPECTED_SERIE", affected_date=report_date)
             rows.append(_ledger_row(cfg, meta, parsed, blk))
         for w in parsed["warnings"]:
             log.info(f"{pdf.name}: {w}")
 
+    if hist_seen:
+        span = sorted(d for ds in hist_seen.values() for d in ds)
+        log.notice(
+            f"pre-consolidation share structure: series {', '.join(sorted(hist_seen))} "
+            f"found in {len(set(span))} reports from {span[0]} to {span[-1]}. AMX "
+            f"consolidated into the single serie B on 2023-03-17; these rows are "
+            f"stored but excluded from the derived series.",
+            code="HISTORICAL_SERIES", affected_date=span[-1])
+
     added = append_ledger(cfg, rows)
-    log.info(f"parse: {len(rows)} report-series parsed, {added} appended, {failures} unparsed")
-    if failures:
-        log.alert(f"{failures} report(s) could not be parsed - reported unparsed, not guessed")
-    return rows
+    log.info(f"parse: {len(rows)} report-series parsed, {added} appended, "
+             f"{len(unparsed)} unparsed, {skipped} already in the ledger (skipped)")
+    if unparsed:
+        log.alert(f"{len(unparsed)} report(s) could not be parsed - reported unparsed, "
+                  "not guessed: " + ", ".join(unparsed), code="UNPARSED")
+    return rows, added, unparsed
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Parse recompras PDFs into the ledger.")
     ap.add_argument("--dump", metavar="PDF", help="dump every field of one PDF and exit")
+    ap.add_argument("--reparse", action="store_true",
+                    help="re-read every PDF, including those already in the ledger")
     args = ap.parse_args()
 
     cfg = load_config()
@@ -536,7 +581,7 @@ def main() -> int:
             print(f"{k}: {v}")
         return 0
 
-    parse_all(cfg, log)
+    parse_all(cfg, log, reparse=args.reparse)
     return 1 if log.alerts else 0
 
 

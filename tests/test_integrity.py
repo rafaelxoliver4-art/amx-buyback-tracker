@@ -89,11 +89,41 @@ def test_ledger_has_no_duplicate_report_dates():
     assert len(dates) == len(set(dates)), "duplicate report_date in the ledger"
 
 
-def test_ledger_is_only_expected_series():
+def test_ledger_is_only_expected_or_declared_historical_series():
+    """AMX filed A, AA and L until it consolidated into the single serie B on
+    2023-03-17. Those are DECLARED in config; anything else is a real
+    surprise."""
     import parse_report
     expected = set(CFG["issuer"]["expected_series"])
+    historical = set(CFG["issuer"].get("historical_series") or [])
     seen = {r["serie"] for r in parse_report.read_ledger(CFG)}
-    assert seen <= expected, f"unexpected series in ledger: {seen - expected}"
+    assert seen <= (expected | historical), \
+        f"undeclared series in ledger: {seen - expected - historical}"
+
+
+def test_historical_series_stop_at_the_declared_cutoff():
+    """A pre-consolidation serie must not appear after the consolidation, and
+    serie B must not appear before it."""
+    import parse_report
+    cutoff = dt.date.fromisoformat(str(CFG["issuer"]["historical_series_until"]))
+    historical = set(CFG["issuer"].get("historical_series") or [])
+    late, early = [], []
+    for r in parse_report.read_ledger(CFG):
+        d = dt.date.fromisoformat(r["report_date"])
+        if r["serie"] in historical and d > cutoff:
+            late.append(f"{r['report_date']} {r['serie']}")
+        if r["serie"] == "B" and d <= cutoff:
+            early.append(f"{r['report_date']} B")
+    assert not late, f"pre-consolidation serie after the cutoff: {late[:5]}"
+    assert not early, f"serie B before the cutoff: {early[:5]}"
+
+
+def test_derived_series_uses_only_serie_b():
+    """Whatever the ledger holds, the workbook's numbers come from B alone."""
+    rows = _rows()
+    import parse_report
+    b_dates = {r["report_date"] for r in parse_report.read_ledger(CFG) if r["serie"] == "B"}
+    assert {r["report_date"].isoformat() for r in rows} <= b_dates
 
 
 def test_shares_outstanding_is_monotonically_non_increasing():

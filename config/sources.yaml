@@ -11,6 +11,15 @@ issuer:
   tipo_mercado: CGEN_CAPIT      # capitales (local equity)
   razon_social: "AMERICA MOVIL, S.A.B. DE C.V."
   expected_series: ["B"]        # anything else is an ALERT, not a silent pass
+  # --- the pre-consolidation share structure (found by the Cycle 1 backfill)
+  # Until March 2023 AMX filed recompras for THREE series - A, AA and L - and
+  # no series B at all. The single series B begins 2023-03-17; the last
+  # multi-series report is 2023-03-10. That is AMX's share consolidation, not
+  # a parsing fault, so those series are declared here: they are recorded in
+  # the ledger, summarised ONCE per run, and excluded from the derived series
+  # (which is serie B only). A series outside BOTH lists still ALERTs.
+  historical_series: ["A", "AA", "L"]
+  historical_series_until: 2023-03-10
 
 http:
   base_url: "https://www.bmv.com.mx"
@@ -35,6 +44,17 @@ listing:
   # "pages" the user sees are DataTables client-side pagination (5 rows/page).
   # Note BMV's own typo in the path: "informcioncorporativa".
   url_template: "{base_url}/es/emisoras/informcioncorporativa/{clave}-{id_emisora}-{tipo_mercado}"
+  # --- guards (Cycle 1, ruling 3) ------------------------------------------
+  # There is deliberately NO cap on how much of the listing we parse: the whole
+  # history is one request and is what proves nothing was missed. Instead we
+  # guard the two ways that can go wrong.
+  guards:
+    # BMV returns all history with no date filter, so the response grows ~250
+    # rows a year forever. Alert long before it becomes a problem.
+    max_response_bytes: 10485760      # 10 MB
+    # A SHRINKING history is a red flag - rows should only ever be added.
+    # Compared against the row count of the previous run's inventory CSV.
+    alert_if_fewer_rows_than_previous: true
   # The page holds several accordion sections; we want only this one.
   section_heading: "ADQUISICION DE ACCIONES POR EMISORA (RECOMPRAS)"
   asunto_expected: "Recompras"
@@ -48,15 +68,28 @@ listing:
 
 # --- which reports we actually download -----------------------------------
 selection:
-  inventory_start: "2026-01-01"     # inventory is walked from here...
+  # Cycle 1 (ruling 2): the FULL listing history. 2021-08-04 is the first
+  # recompras row BMV holds for AMX. The chart needs three-plus years, and the
+  # whole inventory arrives in the one request we already make.
+  inventory_start: "2021-08-01"     # inventory is walked from here...
   inventory_end: "today"            # ...to here ("today" = run date)
   rules:
     last_of_iso_week: true
     last_of_calendar_month: true
-  # explicit extra reports (the prior-year anchor row)
+  # Explicit extra reports. Each December's last report is already picked up by
+  # last_of_calendar_month now that the window starts in 2021; this entry is
+  # kept because the 2025-12 row is the anchor the owner's 2026 table starts on.
   anchor_reports:
     - month: "2025-12"              # last report of Dec-2025
   raw_pdf_filename_template: "{report_date}_{serie}.pdf"
+
+# --- the one-off full backfill (src/backfill.py) --------------------------
+backfill:
+  # Same selection rule as above, applied across the full range, run once and
+  # resumable: anything already in the ledger is skipped, so it is safe to run
+  # twice. It never rewrites an existing ledger row.
+  progress_every: 25                # log a progress line every N downloads
+  parse_every: 50                   # flush parsed rows to the ledger every N
 
 # --- PDF parsing ----------------------------------------------------------
 parse:
@@ -111,6 +144,14 @@ series:
   # pct_outstand. = shares_bought / shares_outstanding_current
   week_rule: "iso"                  # ISO week, row = last report in the week
   month_rule: "calendar"            # row = last report in the calendar month
+  # Ruling 4: a week with no report at all gets an EXPLICIT row - never a
+  # silent gap. buyback_mxn = 0, shares_bought = 0, remanente and shares
+  # outstanding carried forward from the prior row, no_report = TRUE.
+  fill_empty_periods:
+    weekly: true
+    monthly: true                   # in practice never fires (~21 reports/mo)
+  month_label_format: "%b-%y"       # "May-26" - the chart's x-axis label
+  iso_week_format: "{year}-W{week:02d}"
   addition_round_to_mxn: 500000000  # propose additions to the nearest 0.5bn
   # when an unexplained remanente rise is found, download this many daily
   # reports around it to isolate the exact day
@@ -125,8 +166,48 @@ workbook:
     weekly: "Weekly"
     monthly: "Monthly"
     ytd: "YTD"
+    alerts: "Alerts"          # Cycle 1: every ALERT/NOTICE of the run
+    chart: "Chart"            # Cycle 1: the native Excel combo chart
+
+  # --- styling (Cycle 1). Finance style: restrained, no heavy fills. -------
+  style:
+    body_font: "Calibri"
+    body_size_pt: 10
+    header_bold: true
+    header_fill: null                 # deliberately NO fill
+    header_bottom_border: "thin"
+    header_border_color: "FF4A3F35"
+    freeze_header: true               # freeze panes on every sheet
+    autofilter: true                  # over the data range of every data sheet
+    # An unhandled programme addition shows up as a NEGATIVE buyback. It must
+    # be visible at a glance, not buried in the run log.
+    negative_buyback_font_color: "FFC00000"
+    column_width_min: 10
+    column_width_max: 62
+    column_width_padding: 2
+    date_format: "dd-mmm-yyyy"
+
+  # Weekly: ruling 6. Date = the week-ending REPORT date, plus ISO Week and
+  # the Sunday that ends that ISO week.
+  weekly_columns:
+    - {key: date,                header: "Date",                        number_format: "dd-mmm-yyyy"}
+    - {key: iso_week,            header: "ISO Week",                    number_format: "General"}
+    - {key: week_ending_sun,     header: "Week Ending (Sun)",           number_format: "dd-mmm-yyyy"}
+    - {key: remanente,           header: "Remaining Resources (MXN)",   number_format: "#,##0"}
+    - {key: buyback_mxn,         header: "Buybacks (MXN mn)",           number_format: "#,##0,,"}
+    - {key: shares_outstanding,  header: "Shares Outstanding",          number_format: "#,##0"}
+    - {key: shares_bought,       header: "Buybacks (# Shares)",         number_format: "#,##0"}
+    - {key: avg_price,           header: "Avg. Buyback Price (MXN)",    number_format: "#,##0.00"}
+    - {key: program_addition,    header: "Program Addition (MXN)",      number_format: "#,##0"}
+    - {key: pct_outstanding,     header: "% Shares Outstanding",        number_format: "0.00%"}
+    - {key: no_report,           header: "No Report",                   number_format: "General"}
+    - {key: source_report_date,  header: "Source Report Date",          number_format: "dd-mmm-yyyy"}
+    - {key: pdf_url,             header: "Source PDF URL",              number_format: "General"}
+
   monthly_columns:
     # A-F EXACTLY as the owner's format, in this order and wording.
+    # Ruling 5: Date is the TRUE BMV report date. The owner's month-end labels
+    # were approximations and are NOT preserved.
     - {key: date,                header: "Date",                        number_format: "dd-mmm-yyyy"}
     - {key: remanente,           header: "Remaining Resources (MXN)",   number_format: "#,##0"}
     - {key: buyback_mxn,         header: "Buybacks (MXN mn)",           number_format: "#,##0,,"}
@@ -138,6 +219,32 @@ workbook:
     - {key: pct_outstanding,     header: "% Shares Outstanding",        number_format: "0.00%"}
     - {key: source_report_date,  header: "Source Report Date",          number_format: "dd-mmm-yyyy"}
     - {key: pdf_url,             header: "Source PDF URL",              number_format: "General"}
+    # Ruling 5: appended at K so the documented A-J order is undisturbed.
+    # This is the chart's x-axis label.
+    - {key: month_label,         header: "Month",                       number_format: "General"}
+    - {key: no_report,           header: "No Report",                   number_format: "General"}
+
+  # Cycle 1: the YTD sheet is also the Cycle 2 email table.
+  ytd:
+    title_template: "AMX Buybacks - {year} YTD (through {through})"
+    columns:
+      - {key: month_label,       header: "Month",                       number_format: "General"}
+      - {key: buyback_mxn,       header: "Buybacks (MXN mn)",           number_format: "#,##0,,"}
+      - {key: shares_bought,     header: "Buybacks (# shares, mn)",     number_format: "#,##0.0,,"}
+      - {key: avg_price,         header: "Avg. Price (MXN)",            number_format: "#,##0.00"}
+      - {key: pct_outstanding,   header: "% Shares Out",                number_format: "0.00%"}
+    total_label: "TOTAL"
+    # The TOTAL average price is WEIGHTED (total MXN / total shares), never a
+    # mean of the monthly means. % Shares Out on the TOTAL row is measured
+    # against shares outstanding at 31-Dec of the PRIOR year.
+    total_avg_price_is_weighted: true
+
+  alerts_columns:
+    - {key: timestamp,      header: "Timestamp"}
+    - {key: severity,       header: "Severity"}
+    - {key: code,           header: "Code"}
+    - {key: message,        header: "Message"}
+    - {key: affected_date,  header: "Affected Date"}
 
 # --- known defects in BMV's own data --------------------------------------
 # Each PDF restates the prior report's figures under "al ultimo reporte",

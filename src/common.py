@@ -73,9 +73,17 @@ def parse_number(text: str):
 # run log
 # --------------------------------------------------------------------------
 class RunLog:
+    """Text log on disk, plus a structured record of the noteworthy events.
+
+    `notices` is what the workbook's Alerts sheet renders. Only alert() and
+    notice() land there - routine info() chatter ("downloaded 2024-03-15")
+    does not, so an EMPTY Alerts sheet genuinely means a clean run.
+    """
+
     def __init__(self, cfg: dict):
         self.path = repo_path(cfg["paths"]["run_log"])
         self.alerts: list[str] = []
+        self.notices: list[dict] = []
 
     def _write(self, level: str, msg: str) -> None:
         line = f"[{dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')}] {level}: {msg}"
@@ -83,14 +91,33 @@ class RunLog:
         with open(self.path, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
 
+    def _record(self, severity: str, code: str, msg: str, affected_date) -> None:
+        self.notices.append({
+            "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "severity": severity,
+            "code": code,
+            "message": msg,
+            "affected_date": "" if affected_date is None else str(affected_date),
+        })
+
     def info(self, msg: str) -> None:
         self._write("INFO", msg)
 
     def warn(self, msg: str) -> None:
         self._write("WARN", msg)
 
-    def alert(self, msg: str) -> None:
+    def notice(self, msg: str, code: str = "NOTICE", affected_date=None) -> None:
+        """An INFO the owner should see in the workbook - not an alert.
+
+        Ruling 1: an unconfirmed programme addition reports ONCE per run
+        through here, instead of raising a repeated ALERT on every row.
+        """
+        self._record("INFO", code, msg, affected_date)
+        self._write("INFO", msg)
+
+    def alert(self, msg: str, code: str = "ALERT", affected_date=None) -> None:
         self.alerts.append(msg)
+        self._record("ALERT", code, msg, affected_date)
         self._write("ALERT", msg)
 
 

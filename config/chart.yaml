@@ -1,0 +1,136 @@
+# ---------------------------------------------------------------------------
+# chart.yaml - EVERY chart parameter. No colour, size, rotation or gap width
+# may be hardcoded in Python.
+#
+# The target is the owner's existing house-style chart; this reproduces it
+# rather than redesigning it. Two renderers consume this file:
+#
+#   src/build_chart.py render_png()   -> output/amx_buybacks_chart.png
+#                                        the pixel-accurate match; Cycle 2
+#                                        emails this one.
+#   src/build_chart.py add_excel()    -> the "Chart" sheet, a NATIVE Excel
+#                                        combo chart so it is live in the
+#                                        workbook. openpyxl cannot express
+#                                        every property below - the ones it
+#                                        drops are marked "PNG only".
+#
+# Series: COLUMNS = Buybacks (MXN mn) on the primary axis
+#         LINE+MARKERS = % shares outstanding on a hidden secondary axis
+# ---------------------------------------------------------------------------
+
+output:
+  png_path: "output/amx_buybacks_chart.png"
+  # ~1100 x 340 px at 200 dpi
+  width_px: 1100
+  height_px: 340
+  dpi: 200
+  bbox_inches: "tight"
+  pad_inches: 0.02
+  facecolor: "#FFFFFF"
+  transparent: false
+
+title:
+  show: false            # the workbook/email supplies its own heading
+
+# --- source of the data ----------------------------------------------------
+source:
+  sheet: "Monthly"       # the Monthly frame, full history
+  x_key: "month_label"   # "Jul-23"
+  bar_key: "buyback_mxn"        # stored in full pesos, displayed as MXN mn
+  line_key: "pct_outstanding"   # a fraction; displayed as a percentage
+  bar_divisor: 1000000          # pesos -> MXN mn for plotting
+  # a no_report week/month is a real zero, and is plotted as one
+  include_no_report_rows: true
+
+# --- COLUMNS: buybacks in MXN mn (primary axis) ----------------------------
+bars:
+  label: "Buybacks (MXN mn)"
+  color: "#C4B08C"       # solid warm tan
+  edge_color: null       # no border
+  edge_width: 0.0
+  gap_width_pct: 40      # Excel gap width; matplotlib bar width = 1/(1+40/100)
+  z_order: 2
+
+# --- LINE + MARKERS: % shares outstanding (secondary axis) -----------------
+line:
+  label: "% shares outstanding"
+  color: "#4A3F35"       # dark warm brown
+  width_pt: 1.5
+  style: "solid"
+  z_order: 3
+  marker:
+    symbol: "o"          # matplotlib name
+    excel_symbol: "circle"   # OOXML name for the same marker
+    size_pt: 5.0
+    face_color: "#FFFFFF"        # white fill
+    edge_color: "#4A3F35"        # line-coloured border
+    edge_width_pt: 1.0
+  data_labels:
+    show: true
+    number_format: "0.00%"
+    font_size_pt: 6.5
+    rotation_deg: 45
+    position: "above"
+    offset_pt: 6.0
+    color: "#4A3F35"
+
+# --- axes ------------------------------------------------------------------
+axes:
+  x:
+    label_rotation_deg: 45
+    label_font_size_pt: 8.0
+    label_ha: "right"
+    color: "#4A3F35"
+    line_width_pt: 0.8
+    show_ticks: true
+    tick_length_pt: 2.0
+  y_primary:
+    min: 0               # starts at 0
+    max: null            # auto
+    number_format: "#,##0"        # thousands separator, 0dp
+    label_font_size_pt: 8.0
+    color: "#4A3F35"
+    line_width_pt: 0.8
+    show_line: true
+    headroom_pct: 12     # space above the tallest bar for the line labels
+  y_secondary:
+    # COMPLETELY HIDDEN - no line, no labels, no ticks.
+    visible: false
+    min: 0
+    headroom_pct: 45     # keeps the line clear of the bars
+  gridlines:
+    show: false
+  plot_area_border:
+    show: false
+
+# --- legend ----------------------------------------------------------------
+legend:
+  show: true
+  position: "bottom"
+  anchor: "center"
+  font_size_pt: 7.5
+  frame: false
+  columns: 2
+  # order matches the spec: bars first, then the line
+  entries: ["bars", "line"]
+  y_offset: -0.34        # below the rotated x labels
+
+# --- fonts -----------------------------------------------------------------
+font:
+  family: ["Calibri", "Segoe UI", "DejaVu Sans"]
+  color: "#4A3F35"
+
+# --- native Excel chart ----------------------------------------------------
+excel:
+  sheet: "Chart"
+  anchor: "B2"
+  # openpyxl sizes charts in cm
+  width_cm: 28.0
+  height_cm: 8.6
+  # Properties openpyxl/OOXML cannot express the way matplotlib can. Recorded
+  # here so the difference is documented rather than silently absorbed - see
+  # PROGRESS.md Cycle 1 and the report.
+  known_limitations:
+    - "data label rotation (45 deg) is not emitted by openpyxl's DataLabelList"
+    - "marker fill/border colours fall back to the theme, not white-on-brown"
+    - "the secondary axis is set delete=True; Excel still reserves its space"

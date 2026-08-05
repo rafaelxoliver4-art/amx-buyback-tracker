@@ -5,6 +5,228 @@ the standing brief.
 
 ---
 
+## Cycle 1 — 2026-08-04/05 — full backfill, workbook styling, and the chart
+
+### Handed off
+
+Extend the series back to the start of the listing, make the workbook
+presentable, build the buybacks chart, and implement six Architect rulings.
+Still local: no remote, no Actions, no email.
+
+### What came back
+
+**Status: complete. Both acceptance fixtures PASS. 41/41 tests pass.**
+
+Neither `fetch_reports.py`'s listing/parse logic nor `parse_report.py`'s field
+extraction needed changing, as the pre-req required. Three additive changes
+were made around them and are called out below.
+
+#### Backfill
+
+| | |
+|---|---|
+| PDFs downloaded | **259** in the main run, 0 failures, 0 unparsed |
+| Elapsed | 16m37s downloading + 11m parsing = **27m42s** |
+| Selected | 294 reports across **2021-08-06 → 2026-08-03** |
+| Ledger rows | **39 → 492** in the main run (**536** after the investigation downloads below) |
+| Listing | 1,255 rows, 958,373 bytes — inside both new guards |
+
+A further ~44 daily PDFs were downloaded while investigating the discrepancies
+below (Apr/Jun-2023, Aug-2024). Every one is appended, nothing rewritten.
+
+#### The finding that reshaped the cycle: AMX's share consolidation
+
+**Until 2023-03-10 AMX filed three series — A, AA and L — and no series B at
+all.** Series B begins **2023-03-17**. 97 reports carry the old structure.
+
+Cycle 0's "AMX files exactly one serie (B)" was true of 2026 and false of the
+history. The design held: the parser already alerted rather than silently
+passing, and `ledger_rows` already filtered to B. The old series are now
+**declared** in config, stored, summarised once per run, and excluded from the
+derived series; two tests assert neither structure leaks across 2023-03-10.
+
+**So the derived series cannot start before 2023-03-17** — there is no B to
+chain to. The full backfill still ran and the pre-2023 reports are in the
+ledger, but the chart and frames begin Mar-2023. Extending further would mean
+deciding how to splice A + AA + L into B. **Open question 1.**
+
+#### Programme additions — all five, with the seam evidence
+
+Each isolated by the same inter-report seam method that dated 2026-04-23:
+yesterday's `al presente` versus today's `al último reporte`.
+
+| Date | Amount (MXN) | Prior `al presente` → this `al último` | Reading |
+|---|---:|---|---|
+| 2023-04-14 | 1,586,249,981 | 18,413,750,019 → **20,000,000,000** | **reset to a round 20.0bn total** |
+| 2024-04-29 | 15,000,000,066 | 276,274,141 → 15,276,274,207 | 15.0bn + 66 drift |
+| 2024-11-08 | 15,000,000,033 | 3,645,395,812 → 18,645,395,845 | 15.0bn + 33 drift |
+| 2025-05-14 | 10,000,000,012 | 9,556,658,919 → 19,556,658,931 | 10.0bn + 12 drift |
+| 2026-04-23 | 10,000,000,000 | 11,042,617,352 → 21,042,617,352 | exactly 10.0bn |
+
+All five `confirmed_by_owner: false`, each with a `notes:` field. **Open
+question 2.**
+
+**A real bug, found by the guardrail.** The first pass rounded 2023-04-14 to
+1.5bn and left a **negative buyback** — the "never absorb a rise" rule
+refusing to paper over a wrong answer. The cause: the code only trusted an
+exact seam *if it was already round*. But 2023-04-14 is a **reset to a round
+total**, not a round increment. An exact seam is a measurement; rounding is
+now only a fallback for when the seam cannot be measured. The three
+few-peso residues (+66/+33/+12) are the same defect class as the recorded
+2026-04-24 +26 MXN.
+
+**How it was proved end to end:** after fixing the logic the four
+auto-proposed entries were **deleted from the config** and the probe re-derived
+all of them from scratch, arriving at the exact seams above.
+
+#### Acceptance test
+
+**2026 fixture (Cycle 0, untouched): PASS** — all 8 rows and the YTD total to
+the peso, unchanged. A test asserts that fixture's values are still the
+original ones.
+
+**Full-history fixture (May-2023 → Dec-2025): PASS — 32/32 rows.**
+
+Measured **on the owner's own dates**, straight off the ledger, each period
+deriving from the previous fixture row. The shipped monthly frame uses
+month-end reports (ruling 5) and the owner's early-2023 rows do not; comparing
+across that confused a date question with a value one. Once separated:
+
+- **21 rows match exactly** — remanente, shares outstanding and shares bought
+  to the peso/share, avg price to 2dp.
+- **2 date differences**, reported not failed: the owner's `27-Jun-2023` is the
+  **26-Jun** report (shares 63,167,000,000 matches exactly), and `30-Oct-2024`
+  is the **31-Oct** report.
+- **11 declared errors in the owner's table**, from four root causes, each
+  recorded individually with evidence in the fixture — never a blanket
+  tolerance, so a new break still fails.
+
+| Owner's figure | Scraped | Diagnosis |
+|---|---|---|
+| 2023-05-30 buyback 485 mn | **495 mn** | shares bought (25,775,000) and both balance columns reconcile exactly, so only column C is wrong; their 18.83 avg was computed from it |
+| 2023-06-27 remanente 18,970,488,531 | **18,979,488,531** | single digit; explains Jun **and** Jul buybacks and avg prices |
+| 2024-03-27 remanente ...485 | **...414** | 71 MXN slip; date and shares match exactly |
+| 2024-04-30 remanente 15,029,**3**36,004 | **15,029,9<br>36,004** | single digit, 600,000 MXN |
+| **2024-09-30 buyback 1,521 mn / 95.2 mn sh** | **1,086 mn / 68.0 mn sh** | **the owner's Sep row re-counts most of August** |
+
+The last is material and worth the Architect's attention. Both balance columns
+match the 30-Sep PDF exactly, and so does the 30-Aug row it should measure
+from. No August report reproduces the owner's figure. Decisive check: the true
+31-Jul → 30-Sep window is **1,630,947,310 MXN / 102,000,000 shares**; scraped
+Aug + Sep (545 + 1,086 = 1,631 mn / 102.0 mn) **ties to it exactly**, while the
+owner's (545 + 1,521 = 2,066 mn / 129.2 mn) **overstates it by 435 mn /
+27.2 mn**.
+
+**No scraped figure was adjusted to fit, and neither fixture's values were
+edited to make anything pass.**
+
+#### Test output
+
+```
+$ python -m pytest tests -q
+.........................................                    [100%]
+41 passed in 102.81s
+```
+
+20 new tests in `tests/test_series.py` covering the six rulings: label
+formats, ISO-week arithmetic, empty-period filling on synthetic frames, the
+built weekly frame having no gaps at all, "one notice per run, severity INFO",
+every unconfirmed addition having `notes:`, the listing guards, "no cap"
+staying absent from config, the YTD total being weighted rather than a mean of
+means, the chart config holding every style value, and a grep asserting **no
+hex colour appears in `build_chart.py`**. Plus three rewritten integrity tests
+for the share consolidation.
+
+#### The chart
+
+`output/amx_buybacks_chart.png` — 41 months, Apr-23 → Aug-26. Tan columns on
+the primary axis, dark-brown line with white-filled circle markers on a fully
+hidden secondary axis, 45°-rotated `0.00%` labels above each point,
+45°-rotated month labels, no gridlines, no plot border, legend bottom centre.
+Every value from `config/chart.yaml`.
+
+**How the native Excel chart differs from the PNG:**
+
+| | |
+|---|---|
+| **Data-label rotation** | requested via `txPr`, but Excel's own renderer is the authority and it does not always honour rotation on a line series' labels. The PNG is the reference. |
+| **Marker fill/border** | set explicitly, but Excel may substitute theme colours depending on version. |
+| **Hidden secondary axis** | `delete=True` hides the labels and ticks; Excel still reserves a sliver of plot width for it, so the plot area is marginally narrower than the PNG's. |
+| **Gap width** | 40 in both, but Excel and matplotlib compute bar width from it slightly differently, so bars are a hair wider in Excel. |
+
+These are recorded in `chart.yaml → excel.known_limitations`. Accepted, not
+fought, as instructed.
+
+#### Additive changes around the protected modules
+
+Three, none touching listing/parse logic or field extraction:
+
+1. `fetch_inventory` gained the two ruling-3 guards (wrapped around the
+   existing parse, which is unchanged).
+2. `parse_all` gained the declared-historical-series branch, a richer return
+   value, and the already-in-ledger skip.
+3. `RunLog` gained structured `notices` so the Alerts sheet has something to
+   render.
+
+#### Things found along the way
+
+- **`bar + line` does not build an openpyxl combo chart.** `__add__` requires
+  both operands to be the same class and raises `TypeError: Cannot combine
+  instances of different types`. The idiom is in-place `bar += line`. The
+  first build lost both charts to this; the PNG now renders first, in its own
+  guard, so a native-chart failure can never cost the PNG or the workbook.
+- **Every addition probe re-parsed all 300+ PDFs** — about five minutes each,
+  four probes. `parse_all` now skips PDFs already in the ledger, which is
+  sound because the ledger is append-only, and the probes dropped to seconds.
+- **The empty-week rule never fires.** Every ISO week from 2023-03-17 to
+  2026-08-03 has a report. The rule is held by unit tests on synthetic frames
+  plus a test that the real weekly frame has no gaps.
+- **The Alerts sheet is clean** — five INFO notices, one per unconfirmed
+  addition, and zero ALERTs.
+
+### Fragility register — changes since Cycle 0
+
+Cycle 0's ten risks all stand. Ruling 3 closed the "unbounded listing" gap
+(#1) with guards rather than a cap. Two new entries:
+
+| # | Risk | Likelihood | What happens today |
+|---|---|---|---|
+| 11 | **A fourth programme addition style.** We have seen a round increment and a reset to a round total. A third pattern (e.g. a partial cancellation *reducing* the remanente) would not be recognised. | low | a fall in the remanente reads as buyback and would be **silently wrong** — nothing detects it. See open question 4. |
+| 12 | **A future series change.** AMX consolidated once already; the cutoff is a fixed date in config. | low | a new serie ALERTs and lands in the ledger; the derived series silently stays on B |
+
+### Open questions for the Architect
+
+1. **The series-B floor.** The derived series cannot start before
+   **2023-03-17** — before that AMX filed A, AA and L and no B. The owner's
+   table starts May-2023, so nothing is currently lost. Should Cycle 2 attempt
+   to splice the pre-2023 series into a continuous history, or is Mar-2023 the
+   permanent start?
+2. **Confirming five programme additions.** All five are
+   `confirmed_by_owner: false` and each emits an INFO every run by design.
+   Confirming them needs the AGM resolutions, which are not in the recompras
+   PDFs. Ruling 1 said not to scrape Eventos Relevantes this cycle — should
+   Cycle 2, or will you confirm them by hand?
+3. **The owner's Sep-2024 row overstates buybacks by 435 mn.** Our figure ties
+   exactly to the two PDFs either side. Confirm we ship the scraped figure —
+   and note it changes any published FY2024 total by that amount.
+4. **A programme *reduction*.** Additions are handled; a cancellation that
+   *lowered* the remanente would be indistinguishable from a buyback and would
+   pass silently. Worth a guard (e.g. alert when implied avg price falls
+   outside a sane band)?
+5. **Chart density.** 41 months of 45°-rotated labels collide in the busy
+   stretches. Match-the-house-style says leave it. Label every other point, or
+   keep as is?
+6. **Cycle 0's open questions 4, 5 and 6 are now answered by rulings 4, 5 and
+   6.** Question 3 (listing cap) is answered by the guards. Nothing outstanding
+   from Cycle 0.
+
+### Next — Cycle 2
+
+The email body and the weekly unattended run. The YTD sheet is already built
+to be the email table.
+
+---
+
 ## 2026-08-04 — Relocation to the canonical home
 
 The owner could not find what Cycle 0 produced. It was written to

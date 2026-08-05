@@ -4,6 +4,7 @@ pdfplumber>=0.11
 PyYAML>=6.0
 pandas>=2.0
 openpyxl>=3.1
+matplotlib>=3.8          # Cycle 1: output/amx_buybacks_chart.png
 
 # tests
 pytest>=8.0

@@ -39,7 +39,27 @@ from common import (  # noqa: E402
 FRAME_FIELDS = [
     "date", "remanente", "buyback_mxn", "shares_outstanding", "shares_bought",
     "avg_price", "program_addition", "pct_outstanding", "source_report_date", "pdf_url",
+    "month_label", "iso_week", "week_ending_sun", "no_report",
 ]
+
+
+# --------------------------------------------------------------------------
+# labels (ruling 5 and 6)
+# --------------------------------------------------------------------------
+def month_label(cfg: dict, d: dt.date) -> str:
+    """'May-26' - the chart's x-axis label."""
+    return d.strftime(cfg["series"]["month_label_format"])
+
+
+def iso_week_label(cfg: dict, d: dt.date) -> str:
+    """'2026-W31'."""
+    y, w, _ = d.isocalendar()
+    return cfg["series"]["iso_week_format"].format(year=y, week=w)
+
+
+def week_ending_sunday(d: dt.date) -> dt.date:
+    """The Sunday that closes d's ISO week (ISO weeks run Mon..Sun)."""
+    return d + dt.timedelta(days=7 - d.isoweekday())
 
 
 # --------------------------------------------------------------------------
@@ -54,13 +74,23 @@ def load_additions() -> list[dict]:
     return sorted(out, key=lambda a: a["date"])
 
 
-def append_addition(date: dt.date, amount: int, source: str) -> None:
+DEFAULT_ADDITION_NOTES = (
+    "confirm against the AGM/board resolution authorising the buyback programme "
+    "top-up (BMV 'Eventos Relevantes' or 'Asambleas' for AMX, or the AMX annual "
+    "report); the recompras PDF never states the programme size. Then set "
+    "confirmed_by_owner: true."
+)
+
+
+def append_addition(date: dt.date, amount: int, source: str,
+                    notes: str = DEFAULT_ADDITION_NOTES) -> None:
     """Append a proposal. Never rewrites or removes an existing entry."""
     path = CONFIG_DIR / "program_additions.yaml"
     text = path.read_text(encoding="utf-8")
     entry = (f"  - date: {date.isoformat()}\n"
              f"    amount_mxn: {amount}\n"
              f"    source: \"{source}\"\n"
+             f"    notes: \"{notes}\"\n"
              f"    confirmed_by_owner: false\n")
     # an empty list must become a block sequence before items can be appended
     if re.search(r"^additions:\s*\[\s*\]\s*$", text, re.M):
@@ -124,20 +154,26 @@ def _bucket_last(rows: list[dict], keyfn) -> list[dict]:
 # frame construction
 # --------------------------------------------------------------------------
 def build_frame(anchors: list[dict], additions: list[dict], cfg: dict,
-                log: RunLog, probe: bool = True) -> list[dict]:
+                log: RunLog, probe: bool = True,
+                used_unconfirmed: dict | None = None) -> list[dict]:
     frame: list[dict] = []
     for i, r in enumerate(anchors):
+        d = r["report_date"]
         row = {
-            "date": r["report_date"],
+            "date": d,
             "remanente": r["remanente"],
             "shares_outstanding": r["shares_outstanding"],
-            "source_report_date": r["report_date"],
+            "source_report_date": d,
             "pdf_url": r["pdf_url"],
             "program_addition": 0,
             "buyback_mxn": None,
             "shares_bought": None,
             "avg_price": None,
             "pct_outstanding": None,
+            "month_label": month_label(cfg, d),
+            "iso_week": iso_week_label(cfg, d),
+            "week_ending_sun": week_ending_sunday(d),
+            "no_report": False,
             "is_anchor": i == 0,
         }
         if i == 0:
@@ -145,25 +181,27 @@ def build_frame(anchors: list[dict], additions: list[dict], cfg: dict,
             continue
 
         prev = anchors[i - 1]
-        add, hits = addition_in(additions, prev["report_date"], r["report_date"])
+        add, hits = addition_in(additions, prev["report_date"], d)
         buyback = prev["remanente"] + add - r["remanente"]
 
         if buyback < 0:
             add2 = _handle_unexplained_rise(prev, r, add, cfg, log, probe)
             if add2 is not None:
                 additions[:] = load_additions()
-                add, hits = addition_in(additions, prev["report_date"], r["report_date"])
+                add, hits = addition_in(additions, prev["report_date"], d)
                 buyback = prev["remanente"] + add - r["remanente"]
             if buyback < 0:
-                log.alert(f"{r['report_date']}: remanente rose by "
+                log.alert(f"{d}: remanente rose by "
                           f"{r['remanente'] - prev['remanente'] - add:,} MXN with no known "
-                          f"programme addition - buyback left NEGATIVE, not absorbed")
+                          f"programme addition - buyback left NEGATIVE, not absorbed",
+                          code="UNEXPLAINED_RISE", affected_date=d)
 
-        for h in hits:
-            if not h.get("confirmed_by_owner", False):
-                log.alert(f"{r['report_date']}: uses UNCONFIRMED programme addition "
-                          f"{h['amount_mxn']:,} MXN dated {h['date']} "
-                          f"(confirmed_by_owner: false)")
+        # Ruling 1: an unconfirmed addition is NOT alerted per row. It is
+        # collected here and reported ONCE per run by build().
+        if used_unconfirmed is not None:
+            for h in hits:
+                if not h.get("confirmed_by_owner", False):
+                    used_unconfirmed[h["date"]] = h
 
         shares = prev["shares_outstanding"] - r["shares_outstanding"]
         row["program_addition"] = add
@@ -173,6 +211,102 @@ def build_frame(anchors: list[dict], additions: list[dict], cfg: dict,
         row["pct_outstanding"] = (shares / r["shares_outstanding"]) if r["shares_outstanding"] else None
         frame.append(row)
     return frame
+
+
+# --------------------------------------------------------------------------
+# ruling 4: never a silent gap
+# --------------------------------------------------------------------------
+def fill_empty_weeks(cfg: dict, frame: list[dict], log: RunLog) -> list[dict]:
+    """Insert an EXPLICIT row for every ISO week with no report at all.
+
+    buyback_mxn = 0 and shares_bought = 0 (no filings means no reported
+    repurchases), remanente and shares outstanding carried forward, and
+    no_report = TRUE so the gap is visible rather than inferred.
+    """
+    if not frame:
+        return frame
+    out: list[dict] = []
+    for i, row in enumerate(frame):
+        out.append(row)
+        if i + 1 >= len(frame):
+            break
+        # step Monday to Monday until we reach the next row's week
+        cur = row["date"] - dt.timedelta(days=row["date"].isoweekday() - 1)
+        nxt = frame[i + 1]["date"]
+        nxt_mon = nxt - dt.timedelta(days=nxt.isoweekday() - 1)
+        cur += dt.timedelta(days=7)
+        while cur < nxt_mon:
+            sunday = cur + dt.timedelta(days=6)
+            out.append({
+                "date": sunday,
+                "remanente": row["remanente"],
+                "shares_outstanding": row["shares_outstanding"],
+                "source_report_date": None,
+                "pdf_url": "",
+                "program_addition": 0,
+                "buyback_mxn": 0,
+                "shares_bought": 0,
+                "avg_price": None,
+                "pct_outstanding": 0.0,
+                "month_label": month_label(cfg, sunday),
+                "iso_week": iso_week_label(cfg, cur),
+                "week_ending_sun": sunday,
+                "no_report": True,
+                "is_anchor": False,
+            })
+            cur += dt.timedelta(days=7)
+    added = len(out) - len(frame)
+    if added:
+        weeks = [r["iso_week"] for r in out if r["no_report"]]
+        log.notice(f"{added} ISO week(s) had no BMV report at all and were written as "
+                   f"explicit zero-buyback rows (no_report = TRUE): " + ", ".join(weeks),
+                   code="EMPTY_WEEK")
+    return out
+
+
+def fill_empty_months(cfg: dict, frame: list[dict], log: RunLog) -> list[dict]:
+    """The monthly equivalent. In practice never fires - BMV files ~21
+    reports a month - but a silent gap is not acceptable at any granularity."""
+    if not frame:
+        return frame
+    out: list[dict] = []
+    for i, row in enumerate(frame):
+        out.append(row)
+        if i + 1 >= len(frame):
+            break
+        y, m = row["date"].year, row["date"].month
+        ny, nm = frame[i + 1]["date"].year, frame[i + 1]["date"].month
+        while True:
+            m += 1
+            if m == 13:
+                y, m = y + 1, 1
+            if (y, m) >= (ny, nm):
+                break
+            last = (dt.date(y + (m == 12), (m % 12) + 1, 1) - dt.timedelta(days=1))
+            out.append({
+                "date": last,
+                "remanente": row["remanente"],
+                "shares_outstanding": row["shares_outstanding"],
+                "source_report_date": None,
+                "pdf_url": "",
+                "program_addition": 0,
+                "buyback_mxn": 0,
+                "shares_bought": 0,
+                "avg_price": None,
+                "pct_outstanding": 0.0,
+                "month_label": month_label(cfg, last),
+                "iso_week": iso_week_label(cfg, last),
+                "week_ending_sun": week_ending_sunday(last),
+                "no_report": True,
+                "is_anchor": False,
+            })
+    added = len(out) - len(frame)
+    if added:
+        months = [r["month_label"] for r in out if r["no_report"]]
+        log.notice(f"{added} calendar month(s) had no BMV report at all and were written "
+                   f"as explicit zero-buyback rows: " + ", ".join(months),
+                   code="EMPTY_MONTH")
+    return out
 
 
 def _handle_unexplained_rise(prev, cur, known_add, cfg, log, probe) -> int | None:
@@ -215,31 +349,94 @@ def _handle_unexplained_rise(prev, cur, known_add, cfg, log, probe) -> int | Non
         log.alert("probe found no single-day remanente rise - nothing proposed")
         return None
 
+    # An EXACT seam is a measurement - BMV's own restatement of the previous
+    # report - so it is used verbatim, round or not. Rounding is only ever a
+    # fallback for when the seam cannot be measured.
+    #
+    # Do not assume a top-up is a round INCREMENT: on 2023-04-14 AMX reset the
+    # remanente to a round TOTAL of exactly 20,000,000,000, which makes the
+    # increment 1,586,249,981. Rounding that to 1.5bn left a residual rise and
+    # a negative buyback. The seam is right; the roundness heuristic was not.
     step = cfg["series"]["addition_round_to_mxn"]
-    if exact and jump_amt % step == 0:
-        proposed, how = jump_amt, f"exact seam of {jump_amt:,} MXN"
+    if exact:
+        proposed = jump_amt
+        how = f"exact inter-report seam of {jump_amt:,} MXN"
+        after = next((r["remanente_ultimo"] for r in daily if r["report_date"] == jump_day), None)
+        if after is not None and after % step == 0:
+            how += f" (the remanente RESET to a round total of {after:,} MXN)"
+        elif jump_amt % step:
+            near = int(round(jump_amt / step) * step)
+            how += (f" - note this is {jump_amt - near:+,} MXN off a round {near:,}; "
+                    "BMV restatement drift of a few pesos is a known defect")
     else:
         proposed = int(round(jump_amt / step) * step)
-        how = f"observed rise of {jump_amt:,} MXN rounded to the nearest {step:,}"
+        how = f"observed rise of {jump_amt:,} MXN rounded to the nearest {step:,} (seam unusable)"
     append_addition(jump_day, proposed,
                     f"inferred from {how} on {jump_day} (daily probe); "
                     "AGM resolution not yet confirmed")
     log.alert(f"PROPOSED programme addition {proposed:,} MXN on {jump_day} "
               f"written to config/program_additions.yaml with confirmed_by_owner: false "
-              f"- OWNER MUST CONFIRM")
+              f"- OWNER MUST CONFIRM", code="ADDITION_PROPOSED", affected_date=jump_day)
     return proposed
 
 
 # --------------------------------------------------------------------------
 # workbook
 # --------------------------------------------------------------------------
+def _style_sheet(ws, style: dict, n_cols: int, n_rows: int, *, autofilter: bool = True) -> None:
+    """Header row + freeze + autofilter + widths. Restrained finance style:
+    bold header, one thin bottom border, NO fill anywhere."""
+    from openpyxl.styles import Alignment, Border, Font, Side
+    from openpyxl.utils import get_column_letter
+
+    body = Font(name=style["body_font"], size=style["body_size_pt"])
+    head = Font(name=style["body_font"], size=style["body_size_pt"],
+                bold=style["header_bold"])
+    edge = Border(bottom=Side(style=style["header_bottom_border"],
+                              color=style["header_border_color"]))
+
+    for j in range(1, n_cols + 1):
+        c = ws.cell(row=1, column=j)
+        c.font = head
+        c.border = edge
+        c.alignment = Alignment(vertical="bottom", wrap_text=False)
+    for i in range(2, n_rows + 2):
+        for j in range(1, n_cols + 1):
+            ws.cell(row=i, column=j).font = body
+
+    if style.get("freeze_header"):
+        ws.freeze_panes = "A2"
+    if autofilter and style.get("autofilter") and n_rows:
+        ws.auto_filter.ref = f"A1:{get_column_letter(n_cols)}{n_rows + 1}"
+
+    # widths sized to content
+    lo, hi, pad = style["column_width_min"], style["column_width_max"], style["column_width_padding"]
+    for j in range(1, n_cols + 1):
+        widest = 0
+        for i in range(1, n_rows + 2):
+            v = ws.cell(row=i, column=j).value
+            if v is None:
+                continue
+            if isinstance(v, dt.date):
+                w = len(style["date_format"])
+            elif isinstance(v, float):
+                w = len(f"{v:,.2f}")
+            elif isinstance(v, int):
+                w = len(f"{v:,}")
+            else:
+                w = len(str(v))
+            widest = max(widest, w)
+        ws.column_dimensions[get_column_letter(j)].width = min(hi, max(lo, widest + pad))
+
+
 def write_workbook(cfg: dict, ledger: list[dict], weekly: list[dict],
                    monthly: list[dict], log: RunLog) -> Path:
     from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font
     from openpyxl.utils import get_column_letter
 
     wc = cfg["workbook"]
-    cols = wc["monthly_columns"]
+    style = wc["style"]
     wb = Workbook()
 
     # ---- Raw --------------------------------------------------------------
@@ -253,54 +450,137 @@ def write_workbook(cfg: dict, ledger: list[dict], weekly: list[dict],
         row = []
         for k in parse_report.LEDGER_FIELDS:
             v = r.get(k, "")
-            if k in numeric and str(v).strip().lstrip("-").isdigit():
+            if k == "report_date" and v:
+                v = dt.date.fromisoformat(v)            # a real date, not a string
+            elif k in numeric and str(v).strip().lstrip("-").isdigit():
                 v = int(v)
             row.append(v)
         ws.append(row)
     for j, k in enumerate(parse_report.LEDGER_FIELDS, start=1):
-        if k in numeric:
+        fmt = "#,##0" if k in numeric else (style["date_format"] if k == "report_date" else None)
+        if fmt:
             for i in range(2, len(ledger) + 2):
-                ws.cell(row=i, column=j).number_format = "#,##0"
+                ws.cell(row=i, column=j).number_format = fmt
+    _style_sheet(ws, style, len(parse_report.LEDGER_FIELDS), len(ledger))
 
     # ---- Weekly / Monthly -------------------------------------------------
-    def dump(title: str, frame: list[dict]) -> None:
+    def dump(title: str, frame: list[dict], cols: list[dict]) -> None:
+        from openpyxl.styles import Font as _Font
         sh = wb.create_sheet(title)
         sh.append([c["header"] for c in cols])
         for row in frame:
-            sh.append([row.get(c["key"]) for c in cols])
+            out = []
+            for c in cols:
+                v = row.get(c["key"])
+                if c["key"] == "no_report":
+                    v = "TRUE" if v else "FALSE"
+                out.append(v)
+            sh.append(out)
         for j, c in enumerate(cols, start=1):
-            letter = get_column_letter(j)
-            sh.column_dimensions[letter].width = max(12, len(c["header"]) + 2)
             for i in range(2, len(frame) + 2):
                 sh.cell(row=i, column=j).number_format = c["number_format"]
+        _style_sheet(sh, style, len(cols), len(frame))
 
-    dump(wc["sheets"]["weekly"], weekly)
-    dump(wc["sheets"]["monthly"], monthly)
+        # A negative buyback means an unhandled programme addition. Make it
+        # impossible to miss: red, not buried in the log.
+        red = _Font(name=style["body_font"], size=style["body_size_pt"],
+                    color=style["negative_buyback_font_color"])
+        jb = next((i for i, c in enumerate(cols, start=1) if c["key"] == "buyback_mxn"), None)
+        if jb:
+            for i in range(2, len(frame) + 2):
+                cell = sh.cell(row=i, column=jb)
+                if isinstance(cell.value, (int, float)) and cell.value < 0:
+                    cell.font = red
 
-    # ---- YTD --------------------------------------------------------------
+    dump(wc["sheets"]["weekly"], weekly, wc["weekly_columns"])
+    dump(wc["sheets"]["monthly"], monthly, wc["monthly_columns"])
+
+    # ---- YTD (also the Cycle 2 email table) -------------------------------
+    yc = wc["ytd"]
+    ycols = yc["columns"]
     year = max(r["date"].year for r in monthly)
     ytd = [r for r in monthly if r["date"].year == year and not r["is_anchor"]]
     prior = [r for r in monthly if r["date"].year < year]
     base_shares = prior[-1]["shares_outstanding"] if prior else None
+    through = max(r["date"] for r in monthly if r["date"].year == year)
 
     sh = wb.create_sheet(wc["sheets"]["ytd"])
-    sh.append(["Month", "Buybacks (MXN mn)", "Buybacks (# Shares mn)",
-               "Avg. Buyback Price (MXN)", "% Shares Outstanding"])
+    sh.append([yc["title_template"].format(year=year, through=through.strftime("%d-%b-%Y"))])
+    sh.cell(row=1, column=1).font = Font(name=style["body_font"],
+                                         size=style["body_size_pt"] + 2, bold=True)
+    sh.append([])
+    header_row = 3
+    sh.append([c["header"] for c in ycols])
+
+    def _row(r):
+        return {
+            "month_label": r["month_label"],
+            "buyback_mxn": r["buyback_mxn"],
+            "shares_bought": r["shares_bought"],
+            "avg_price": r["avg_price"],
+            "pct_outstanding": (r["shares_bought"] / base_shares) if base_shares else None,
+        }
+
     for r in ytd:
-        sh.append([r["date"], r["buyback_mxn"], r["shares_bought"], r["avg_price"],
-                   (r["shares_bought"] / base_shares) if base_shares else None])
+        sh.append([_row(r)[c["key"]] for c in ycols])
 
     tot_mxn = sum(r["buyback_mxn"] for r in ytd)
     tot_sh = sum(r["shares_bought"] for r in ytd)
-    sh.append(["TOTAL", tot_mxn, tot_sh, (tot_mxn / tot_sh) if tot_sh else None,
-               (tot_sh / base_shares) if base_shares else None])
-    # shares in millions to 1dp: at 0dp a 24.6mn month would display as "25"
-    fmts = ["mmm-yyyy", "#,##0,,", "#,##0.0,,", "#,##0.000", "0.00%"]
-    for j, f in enumerate(fmts, start=1):
-        sh.column_dimensions[get_column_letter(j)].width = 24
-        for i in range(2, len(ytd) + 3):
-            sh.cell(row=i, column=j).number_format = f
-    sh.cell(row=len(ytd) + 2, column=1).number_format = "General"
+    total = {
+        "month_label": yc["total_label"],
+        "buyback_mxn": tot_mxn,
+        "shares_bought": tot_sh,
+        # WEIGHTED - total MXN / total shares, never a mean of the monthly means
+        "avg_price": (tot_mxn / tot_sh) if tot_sh else None,
+        "pct_outstanding": (tot_sh / base_shares) if base_shares else None,
+    }
+    sh.append([total[c["key"]] for c in ycols])
+
+    last_row = header_row + len(ytd) + 1
+    from openpyxl.styles import Border, Side
+    bold = Font(name=style["body_font"], size=style["body_size_pt"], bold=True)
+    body = Font(name=style["body_font"], size=style["body_size_pt"])
+    edge = Border(bottom=Side(style=style["header_bottom_border"],
+                              color=style["header_border_color"]))
+    top = Border(top=Side(style=style["header_bottom_border"],
+                          color=style["header_border_color"]))
+    for j, c in enumerate(ycols, start=1):
+        sh.cell(row=header_row, column=j).font = bold
+        sh.cell(row=header_row, column=j).border = edge
+        sh.column_dimensions[get_column_letter(j)].width = max(
+            style["column_width_min"], len(c["header"]) + style["column_width_padding"] + 2)
+        for i in range(header_row + 1, last_row + 1):
+            cell = sh.cell(row=i, column=j)
+            cell.number_format = c["number_format"]
+            cell.font = bold if i == last_row else body
+            if i == last_row:
+                cell.border = top
+    sh.cell(row=last_row, column=1).number_format = "General"
+    sh.freeze_panes = f"A{header_row + 1}"
+
+    # ---- Alerts -----------------------------------------------------------
+    acols = wc["alerts_columns"]
+    sh = wb.create_sheet(wc["sheets"]["alerts"])
+    sh.append([c["header"] for c in acols])
+    for n in log.notices:
+        sh.append([n.get(c["key"], "") for c in acols])
+    _style_sheet(sh, style, len(acols), len(log.notices))
+    for i in range(2, len(log.notices) + 2):
+        sh.cell(row=i, column=4).alignment = Alignment(wrap_text=False, vertical="top")
+
+    # ---- Chart ------------------------------------------------------------
+    # The PNG is the pixel-accurate deliverable, so it is rendered FIRST and
+    # in its own guard: a problem with the native Excel chart must not be able
+    # to cost us the PNG, or the workbook.
+    import build_chart
+    ccfg = load_config("chart.yaml")
+    for what, fn in (("PNG", build_chart.render_png), ("native Excel chart", build_chart.add_excel)):
+        try:
+            fn(cfg, ccfg, wb, monthly, log) if fn is build_chart.add_excel \
+                else fn(cfg, ccfg, monthly, log)
+        except Exception as exc:
+            log.alert(f"{what} generation failed: {type(exc).__name__}: {exc}",
+                      code="CHART_FAILED")
 
     path = repo_path(wc["path"])
     wb.save(path)
@@ -313,12 +593,32 @@ def write_workbook(cfg: dict, ledger: list[dict], weekly: list[dict],
 def build(cfg: dict, log: RunLog, probe: bool = True):
     rows = ledger_rows(cfg)
     if not rows:
-        log.alert("ledger is empty - nothing to build, existing data left untouched")
+        log.alert("ledger is empty - nothing to build, existing data left untouched",
+                  code="LEDGER_EMPTY")
         return [], []
     additions = load_additions()
     check_duplicate_additions(additions, log)
-    weekly = build_frame(_bucket_last(rows, lambda d: d.isocalendar()[:2]), additions, cfg, log, probe)
-    monthly = build_frame(_bucket_last(rows, lambda d: (d.year, d.month)), additions, cfg, log, probe)
+
+    used_unconfirmed: dict = {}
+    weekly = build_frame(_bucket_last(rows, lambda d: d.isocalendar()[:2]),
+                         additions, cfg, log, probe, used_unconfirmed)
+    monthly = build_frame(_bucket_last(rows, lambda d: (d.year, d.month)),
+                          additions, cfg, log, probe, used_unconfirmed)
+
+    fill = cfg["series"].get("fill_empty_periods") or {}
+    if fill.get("weekly"):
+        weekly = fill_empty_weeks(cfg, weekly, log)
+    if fill.get("monthly"):
+        monthly = fill_empty_months(cfg, monthly, log)
+
+    # Ruling 1: ONE line per unconfirmed addition per run - an INFO notice,
+    # not a repeated ALERT. It stays visible until the owner confirms it
+    # against the AGM resolution.
+    for d in sorted(used_unconfirmed):
+        h = used_unconfirmed[d]
+        note = h.get("notes") or "needs AGM resolution"
+        log.notice(f"programme addition {d} MXN {h['amount_mxn']:,} unconfirmed - {note}",
+                   code="ADDITION_UNCONFIRMED", affected_date=d)
     return weekly, monthly
 
 

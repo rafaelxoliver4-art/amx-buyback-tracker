@@ -36,4 +36,25 @@ additions:
   - date: 2026-04-23
     amount_mxn: 10000000000
     source: "inferred from exact seam of 10,000,000,000 MXN on 2026-04-23 (daily probe); AGM resolution not yet confirmed"
+    notes: "confirm against the AGM resolution approving the 2026 programme top-up - look in BMV 'Eventos Relevantes' / 'Asambleas' for AMX around Apr-2026, or the AMX annual report. The recompras PDF never states the programme size. Then set confirmed_by_owner: true."
+    confirmed_by_owner: false
+  - date: 2023-04-14
+    amount_mxn: 1586249981
+    source: "inferred from exact inter-report seam of 1,586,249,981 MXN (the remanente RESET to a round total of 20,000,000,000 MXN) on 2023-04-14 (daily probe); AGM resolution not yet confirmed"
+    notes: "confirm against the AGM/board resolution authorising the buyback programme top-up (BMV 'Eventos Relevantes' or 'Asambleas' for AMX, or the AMX annual report); the recompras PDF never states the programme size. Then set confirmed_by_owner: true."
+    confirmed_by_owner: false
+  - date: 2024-04-29
+    amount_mxn: 15000000066
+    source: "inferred from exact inter-report seam of 15,000,000,066 MXN - note this is +66 MXN off a round 15,000,000,000; BMV restatement drift of a few pesos is a known defect on 2024-04-29 (daily probe); AGM resolution not yet confirmed"
+    notes: "confirm against the AGM/board resolution authorising the buyback programme top-up (BMV 'Eventos Relevantes' or 'Asambleas' for AMX, or the AMX annual report); the recompras PDF never states the programme size. Then set confirmed_by_owner: true."
+    confirmed_by_owner: false
+  - date: 2024-11-08
+    amount_mxn: 15000000033
+    source: "inferred from exact inter-report seam of 15,000,000,033 MXN - note this is +33 MXN off a round 15,000,000,000; BMV restatement drift of a few pesos is a known defect on 2024-11-08 (daily probe); AGM resolution not yet confirmed"
+    notes: "confirm against the AGM/board resolution authorising the buyback programme top-up (BMV 'Eventos Relevantes' or 'Asambleas' for AMX, or the AMX annual report); the recompras PDF never states the programme size. Then set confirmed_by_owner: true."
+    confirmed_by_owner: false
+  - date: 2025-05-14
+    amount_mxn: 10000000012
+    source: "inferred from exact inter-report seam of 10,000,000,012 MXN - note this is +12 MXN off a round 10,000,000,000; BMV restatement drift of a few pesos is a known defect on 2025-05-14 (daily probe); AGM resolution not yet confirmed"
+    notes: "confirm against the AGM/board resolution authorising the buyback programme top-up (BMV 'Eventos Relevantes' or 'Asambleas' for AMX, or the AMX annual report); the recompras PDF never states the programme size. Then set confirmed_by_owner: true."
     confirmed_by_owner: false

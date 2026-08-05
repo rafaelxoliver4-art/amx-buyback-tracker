@@ -1,0 +1,183 @@
+# ---------------------------------------------------------------------------
+# The owner's full known-correct table at MONTHLY granularity, May-2023 to
+# Dec-2025. Cycle 1 acceptance fixture.
+#
+# The 2026 rows are NOT here - they stay in expected_backfill_2026.yaml, which
+# is the Cycle 0 fixture and is not touched.
+#
+# PRECISION. The owner's buyback figures in this table are rounded to MXN mn,
+# so column C is compared at mn precision (+/- 1 mn). remaining_resources,
+# shares_outstanding and shares_bought are compared EXACTLY.
+#
+# Where the scrape and this table disagree at full precision the SCRAPED
+# figure is authoritative: the difference is reported, and the scrape is never
+# adjusted to fit.
+#
+# A DATE difference is reported, not a failure - the owner's dates are
+# approximate month-end labels (ruling 5).
+# ---------------------------------------------------------------------------
+
+tolerance:
+  remanente_mxn: 0              # to the peso
+  buyback_mxn_mn: 1             # to +/- 1 MXN mn (the table is rounded)
+  shares_outstanding: 0         # to the share
+  shares_bought: 0              # to the share
+  avg_price: 0.005              # to 2dp
+
+# The row each period is measured FROM. The owner's May-2023 period does not
+# start at April month-end: its shares_bought (25,775,000) reconciles to the
+# share only against the 17-Apr-2023 report (63,219,775,000 outstanding), so
+# that is the report the owner's table started from.
+anchor:
+  date: 2023-04-17
+  remaining_resources_mxn: 19990580232
+  shares_outstanding: 63219775000
+
+# The owner's label -> the BMV report that actually carries those figures.
+# A DATE difference is reported, never a failure (ruling 5: the workbook
+# carries the true report date).
+date_corrections:
+  2023-06-27: 2023-06-26      # shares 63,167,000,000 matches 26-Jun exactly
+  2024-10-30: 2024-10-31      # shares 61,283,000,000 matches 31-Oct exactly
+
+# ---------------------------------------------------------------------------
+# KNOWN ERRORS IN THE OWNER'S TABLE.
+#
+# Declared explicitly and individually - the same house rule as
+# sources.yaml -> integrity.known_source_discrepancies. NOT a blanket
+# tolerance: any NEW difference still fails the test.
+#
+# In every case the scrape was checked against the PDF on the owner's own
+# date and the surrounding days, and the scraped figure is authoritative.
+# Three of the four are single-digit transcription slips.
+# ---------------------------------------------------------------------------
+known_owner_table_discrepancies:
+  - date: 2023-05-30
+    field: buybacks_mxn_mn
+    owner: 485
+    scraped: 495
+    note: >-
+      Period 17-Apr-2023 -> 30-May-2023: 19,990,580,232 - 19,495,443,353 =
+      495,136,879 MXN. shares_bought (25,775,000) and both balance columns
+      reconcile to the share/peso, so only column C is wrong. 495 -> 485 is a
+      single-digit slip; the owner's avg price 18.83 was computed from the
+      wrong C (495.1/25.775 = 19.21).
+  - date: 2023-06-27
+    field: remaining_resources_mxn
+    owner: 18970488531
+    scraped: 18979488531
+    note: >-
+      The 26-Jun-2023 report (see date_corrections) reads 18,979,488,531 and
+      its shares outstanding matches the owner exactly. 18,9(7)9 -> 18,9(7)0
+      is a single-digit slip.
+  - date: 2024-03-27
+    field: remaining_resources_mxn
+    owner: 2893797485
+    scraped: 2893797414
+    note: >-
+      Date and shares outstanding match exactly; the 27-Mar-2024 PDF reads
+      ...414, not ...485. A 71 MXN transcription slip.
+  - date: 2024-04-30
+    field: remaining_resources_mxn
+    owner: 15029336004
+    scraped: 15029936004
+    note: >-
+      Date and shares outstanding match exactly; the 30-Apr-2024 PDF reads
+      15,029,(9)36,004. A single-digit slip of 600,000 MXN.
+
+  # --- knock-on effects of the two slips above -----------------------------
+  - date: 2023-05-30
+    field: avg_price
+    owner: 18.83
+    scraped: 19.21
+    note: >-
+      Follows from the 485-vs-495 slip on the same row: 495,136,879 /
+      25,775,000 = 19.21. The owner's 18.83 is 485/25.775.
+  - date: 2023-06-27
+    field: buybacks_mxn_mn
+    owner: 525
+    scraped: 516
+    note: >-
+      Follows from the 26-Jun remanente slip. 19,495,443,353 - 18,979,488,531
+      = 515,954,822. Using the owner's own (wrong) 18,970,488,531 gives their
+      525 exactly, which is what confirms the slip is the single root cause.
+      shares_bought (27,000,000) matches to the share.
+  - date: 2023-06-27
+    field: avg_price
+    owner: 19.44
+    scraped: 19.11
+    note: "Follows from the buyback above: 515,954,822 / 27,000,000 = 19.11."
+  - date: 2023-07-28
+    field: buybacks_mxn_mn
+    owner: 728
+    scraped: 737
+    note: >-
+      The July period opens on the same slipped 26-Jun figure.
+      18,979,488,531 - 18,242,771,788 = 736,716,743. The owner's 728 is what
+      their own wrong opening balance produces. shares_bought (41,000,000)
+      matches to the share.
+  - date: 2023-07-28
+    field: avg_price
+    owner: 17.75
+    scraped: 17.97
+    note: "Follows from the buyback above: 736,716,743 / 41,000,000 = 17.97."
+
+  # --- an independent error: the owner's Sep-2024 row double-counts August --
+  - date: 2024-09-30
+    field: buybacks_mxn_mn
+    owner: 1521
+    scraped: 1086
+    note: >-
+      Both balance columns match the 30-Sep-2024 PDF exactly, and so does the
+      30-Aug-2024 row it should measure from, so the period is 30-Aug ->
+      30-Sep: 7,376,735,162 - 6,290,371,824 = 1,086,363,338. No August report
+      reproduces the owner's figure. Decisive check: the true 31-Jul ->
+      30-Sep window is 1,630,947,310 MXN / 102,000,000 shares, and the
+      scraped Aug + Sep (545 + 1,086 = 1,631 mn / 102.0 mn) ties to it
+      exactly, while the owner's Aug + Sep (545 + 1,521 = 2,066 mn / 129.2
+      mn) overstates it by 435 mn / 27.2 mn. The owner's Sep row re-counts
+      most of August.
+  - date: 2024-09-30
+    field: buybacks_shares
+    owner: 95200000
+    scraped: 68000000
+    note: >-
+      Same root cause. 61,478,000,000 - 61,410,000,000 = 68,000,000, both
+      endpoints being the owner's own D-column values.
+
+rows:
+  - {date: 2023-05-30, remaining_resources_mxn: 19495443353, buybacks_mxn_mn:  485, shares_outstanding: 63194000000, buybacks_shares:  25775000, avg_price: 18.83}
+  - {date: 2023-06-27, remaining_resources_mxn: 18970488531, buybacks_mxn_mn:  525, shares_outstanding: 63167000000, buybacks_shares:  27000000, avg_price: 19.44}
+  - {date: 2023-07-28, remaining_resources_mxn: 18242771788, buybacks_mxn_mn:  728, shares_outstanding: 63126000000, buybacks_shares:  41000000, avg_price: 17.75}
+  - {date: 2023-08-31, remaining_resources_mxn: 15990885465, buybacks_mxn_mn: 2252, shares_outstanding: 62987460000, buybacks_shares: 138540000, avg_price: 16.25}
+  - {date: 2023-09-29, remaining_resources_mxn: 14316726518, buybacks_mxn_mn: 1674, shares_outstanding: 62879000000, buybacks_shares: 108460000, avg_price: 15.44}
+  - {date: 2023-10-31, remaining_resources_mxn: 12221125969, buybacks_mxn_mn: 2096, shares_outstanding: 62740000000, buybacks_shares: 139000000, avg_price: 15.08}
+  - {date: 2023-11-30, remaining_resources_mxn: 10543142275, buybacks_mxn_mn: 1678, shares_outstanding: 62630000000, buybacks_shares: 110000000, avg_price: 15.25}
+  - {date: 2023-12-29, remaining_resources_mxn:  7674539406, buybacks_mxn_mn: 2869, shares_outstanding: 62450000000, buybacks_shares: 180000000, avg_price: 15.94}
+  - {date: 2024-01-31, remaining_resources_mxn:  5931485538, buybacks_mxn_mn: 1743, shares_outstanding: 62338000000, buybacks_shares: 112000000, avg_price: 15.56}
+  - {date: 2024-02-29, remaining_resources_mxn:  3989093565, buybacks_mxn_mn: 1942, shares_outstanding: 62213000000, buybacks_shares: 125000000, avg_price: 15.54}
+  - {date: 2024-03-27, remaining_resources_mxn:  2893797485, buybacks_mxn_mn: 1095, shares_outstanding: 62144000000, buybacks_shares:  69000000, avg_price: 15.87}
+  - {date: 2024-04-30, remaining_resources_mxn: 15029336004, buybacks_mxn_mn: 2864, shares_outstanding: 61960000000, buybacks_shares: 184000000, avg_price: 15.56,
+     note: "remanente JUMPS - programme addition expected in this period"}
+  - {date: 2024-05-31, remaining_resources_mxn: 13091019653, buybacks_mxn_mn: 1938, shares_outstanding: 61842000000, buybacks_shares: 118000000, avg_price: 16.43}
+  - {date: 2024-06-28, remaining_resources_mxn: 10142518946, buybacks_mxn_mn: 2949, shares_outstanding: 61652000000, buybacks_shares: 190000000, avg_price: 15.52}
+  - {date: 2024-07-31, remaining_resources_mxn:  7921319134, buybacks_mxn_mn: 2221, shares_outstanding: 61512000000, buybacks_shares: 140000000, avg_price: 15.87}
+  - {date: 2024-08-30, remaining_resources_mxn:  7376735162, buybacks_mxn_mn:  545, shares_outstanding: 61478000000, buybacks_shares:  34000000, avg_price: 16.02}
+  - {date: 2024-09-30, remaining_resources_mxn:  6290371824, buybacks_mxn_mn: 1521, shares_outstanding: 61410000000, buybacks_shares:  95200000, avg_price: 15.98}
+  - {date: 2024-10-30, remaining_resources_mxn:  4252236933, buybacks_mxn_mn: 2038, shares_outstanding: 61283000000, buybacks_shares: 127000000, avg_price: 16.05}
+  - {date: 2024-11-29, remaining_resources_mxn: 17026490646, buybacks_mxn_mn: 2226, shares_outstanding: 61140000000, buybacks_shares: 143000000, avg_price: 15.56,
+     note: "remanente JUMPS - programme addition expected in this period"}
+  - {date: 2024-12-31, remaining_resources_mxn: 14934246155, buybacks_mxn_mn: 2092, shares_outstanding: 61000000000, buybacks_shares: 140000000, avg_price: 14.94}
+  - {date: 2025-01-31, remaining_resources_mxn: 14196117055, buybacks_mxn_mn:  738, shares_outstanding: 60949000000, buybacks_shares:  51000000, avg_price: 14.47}
+  - {date: 2025-02-28, remaining_resources_mxn: 12932453987, buybacks_mxn_mn: 1264, shares_outstanding: 60865000000, buybacks_shares:  84000000, avg_price: 15.04}
+  - {date: 2025-03-31, remaining_resources_mxn: 11137954877, buybacks_mxn_mn: 1794, shares_outstanding: 60740415384, buybacks_shares: 124584616, avg_price: 14.40}
+  - {date: 2025-04-30, remaining_resources_mxn: 10611365219, buybacks_mxn_mn:  527, shares_outstanding: 60707104329, buybacks_shares:  33311055, avg_price: 15.81}
+  - {date: 2025-05-30, remaining_resources_mxn: 18145547146, buybacks_mxn_mn: 2466, shares_outstanding: 60560200000, buybacks_shares: 146904329, avg_price: 16.79,
+     note: "remanente JUMPS - programme addition expected in this period"}
+  - {date: 2025-06-30, remaining_resources_mxn: 16280303166, buybacks_mxn_mn: 1865, shares_outstanding: 60445500000, buybacks_shares: 114700000, avg_price: 16.26}
+  - {date: 2025-07-31, remaining_resources_mxn: 15260430099, buybacks_mxn_mn: 1020, shares_outstanding: 60384000000, buybacks_shares:  61500000, avg_price: 16.58}
+  - {date: 2025-08-29, remaining_resources_mxn: 14757684672, buybacks_mxn_mn:  503, shares_outstanding: 60356000000, buybacks_shares:  28000000, avg_price: 17.96}
+  - {date: 2025-09-30, remaining_resources_mxn: 14119669137, buybacks_mxn_mn:  638, shares_outstanding: 60321750000, buybacks_shares:  34250000, avg_price: 18.63}
+  - {date: 2025-10-31, remaining_resources_mxn: 13838399766, buybacks_mxn_mn:  281, shares_outstanding: 60307500000, buybacks_shares:  14250000, avg_price: 19.74}
+  - {date: 2025-11-28, remaining_resources_mxn: 13759269796, buybacks_mxn_mn:   79, shares_outstanding: 60303750000, buybacks_shares:   3750000, avg_price: 21.10}
+  - {date: 2025-12-31, remaining_resources_mxn: 12990090502, buybacks_mxn_mn:  769, shares_outstanding: 60263500000, buybacks_shares:  40250000, avg_price: 19.11}
