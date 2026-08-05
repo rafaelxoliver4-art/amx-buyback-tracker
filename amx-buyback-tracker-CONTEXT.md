@@ -3,6 +3,16 @@
 The standing brief for this project. **Bar: someone reading only this file
 could rebuild the repo from scratch.** Read this before changing anything.
 
+**Current as of 2026-08-05.** Cycles 0 and 1 are complete; both acceptance
+fixtures pass and 41 tests pass. Local git only — no remote, no Actions, no
+email, no secrets. For what is *decided* see §10; for what is *outstanding*
+see the decisions list at the top of
+[`amx-buyback-tracker-PROGRESS.md`](amx-buyback-tracker-PROGRESS.md).
+
+Two things in this file are **spec, not built** — both are marked in place:
+the stronger listing-shrink guard and the 5,000-row revisit (§7), and the
+backfill scope is recorded as **unresolved** (§7.2).
+
 ---
 
 ## 1. Purpose

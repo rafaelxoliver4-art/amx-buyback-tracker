@@ -6,6 +6,74 @@ standing brief.
 
 ---
 
+## WHERE THINGS STAND — as of 2026-08-05
+
+**Read this first.** Everything below it is the cycle-by-cycle history.
+
+### Built and passing
+
+| | |
+|---|---|
+| Cycles complete | **0** (recon + scaffold), **1** (full backfill, styling, chart) |
+| Ledger | **536 rows**, append-only, serie B from 2023-03-17 |
+| PDFs held | 331, all parsed, **0 unparsed** |
+| Acceptance test | **2026 fixture PASS · full-history fixture PASS (32/32 rows)** |
+| Test suite | **41 passed** |
+| Deliverables | `output/AMX_Buybacks.xlsx` (6 sheets), `output/amx_buybacks_chart.png` |
+
+### Not done, by instruction
+
+No remote, no GitHub repo, no push, no Actions, no email, no credential or
+secret of any kind. `git remote -v` is empty. Local git only, 6 commits.
+
+### DECISIONS NEEDED FROM THE ARCHITECT
+
+Ordered by what blocks the most work. Items 1–3 arise because the 2026-08-04
+rulings were written against the end of Cycle 0, but Cycle 1 had already been
+commissioned and built.
+
+1. **Backfill scope — the one real conflict.** Ruling Q2 says **2026 only**;
+   Cycle 1's own brief said **full history**, and that is what shipped. The
+   chart runs Apr-2023 → Aug-2026 and already spans the three years the
+   owner's reference chart covers. **Nothing has been deleted.** Confirm the
+   full history stands, or say the word and it gets trimmed back to 2026.
+   Everything else in this list is smaller than this one.
+2. **Ruling Q1's revisit trigger has already fired.** Q1 says revisit
+   automated AGM scraping "only if additions ever stop being round numbers."
+   They have: 2023-04-14 is **1,586,249,981** — a reset to a round *total* of
+   20.0bn, not a round increment — and three of the other four seams carry a
+   few pesos of BMV drift. Revisit, or leave it manual?
+3. **Q3's row-count guard is the weaker version.** Shipped: compares against
+   the **previous run's** count. Ruled: the **highest ever** recorded. As
+   built, one shrink becomes the new baseline and the alarm goes quiet.
+   Recorded as spec in CONTEXT §7, not built. Build it next cycle?
+4. **The owner's table has 11 errors; we ship the scraped figures.** Four root
+   causes, each declared with evidence in
+   `tests/expected_backfill_full.yaml`. The material one: **the Sep-2024 row
+   re-counts most of August**, overstating that period by **435 mn MXN /
+   27.2 mn shares**. Confirm we publish the scraped figure — it changes any
+   previously published FY2024 total.
+5. **Five programme additions are unconfirmed.** All `confirmed_by_owner:
+   false`, each emitting one INFO per run by design. Confirming them needs the
+   AGM resolutions, which are not in the recompras PDFs. Confirm by hand, or
+   authorise the scraper in item 2?
+6. **The series-B floor.** The derived series **cannot start before
+   2023-03-17** — before that AMX filed series A, AA and L and no B at all.
+   Permanent floor, or should a later cycle splice the old series in?
+7. **Before the push cycle: the PDF question.** The governance ruling
+   gitignores `data/raw/*.pdf`, but the repo **commits** them today and
+   `.gitignore` says that is deliberate ("the primary evidence for the
+   backfill"). 331 PDFs (~4 MB) are already in history, so adding the rule
+   later stops tracking new ones without removing the old. Which way?
+8. **A programme *reduction* would pass silently.** Additions are handled; a
+   cancellation that *lowered* the remanente is indistinguishable from a
+   buyback. Worth a guard?
+9. **Chart density.** 41 months of 45°-rotated labels collide in the busy
+   stretches. Match-the-house-style says leave it. Leave, or label every other
+   point?
+
+---
+
 ## 2026-08-04 — Architect rulings + governance decisions (documentation cycle)
 
 **No code was changed and no build was run.** Nothing in `src/`, `config/`,
@@ -557,9 +625,18 @@ file.
 
 ### Open questions for the Architect
 
+> **ALL SIX ARE ANSWERED — see the 2026-08-04 rulings in CONTEXT §10.** Kept
+> here as the historical record of what Cycle 0 asked. **The text below
+> describes behaviour as it was on 2026-08-03 and is superseded in two
+> places:** question 1's "raises an ALERT on every run" became **one INFO line
+> per run** under ruling Q1, and question 5's open choice of date was settled
+> by ruling Q5 in favour of the true BMV report date. Nothing here was
+> reworded — the markers are the correction.
+
 1. **Confirm the 10.0bn programme addition.** It is dated **2026-04-23** and
    sits in the config as `confirmed_by_owner: false`, which raises an ALERT on
-   every run by design. Confirming it needs the AGM resolution — which is
+   every run by design. *(Superseded by ruling Q1: it now emits one INFO line
+   per run, not an ALERT.)* Confirming it needs the AGM resolution — which is
    **not** in the recompras PDFs. It is likely in the "Eventos Relevantes" or
    "Asambleas" section of the same BMV page. **Should Cycle 1 also scrape that
    section to close the loop automatically?**
