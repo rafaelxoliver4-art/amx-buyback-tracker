@@ -14,26 +14,31 @@ standing brief.
 
 | | |
 |---|---|
-| Cycles complete | **0** (recon + scaffold), **1** (backfill, styling, chart), **2** (the nine rulings + first push), **3** (Actions + email, built not live) |
-| Ledger | **536 rows**, append-only, serie B from 2023-03-17 |
-| PDFs held | 342, all parsed, **0 unparsed** |
+| Cycles complete | **0** (recon + scaffold), **1** (backfill, styling, chart), **2** (the nine rulings + first push), **3** (Actions + email, **LIVE**) |
+| Ledger | **537 rows**, append-only, serie B from 2023-03-17 |
+| PDFs held | 343, all parsed, **0 unparsed** |
 | Acceptance test | **2026 fixture PASS · full-history fixture PASS (32/32 rows)** |
 | Test suite | **70 passed** |
 | Deliverables | `output/AMX_Buybacks.xlsx` (6 sheets), `output/amx_buybacks_chart.png`, `output/email_preview.html` |
 
-### ⚠ BLOCKED — two settings only the owner can create
+### ✅ LIVE — the weekly job is running and proven
 
-The weekly Action and the email are **built, tested and committed, but NOT
-pushed and NOT live.** Neither GitHub setting they need exists (verified via
-the API: both `total_count: 0`):
+**Proven end to end on 2026-08-05** by a manual `workflow_dispatch` run:
+[run 31034726152](https://github.com/rafaelxoliver4-art/amx-buyback-tracker/actions/runs/31034726152)
+— all 13 steps green in 49 s.
 
-| Create in repo Settings → Secrets and variables → Actions | Kind | Name | Value |
-|---|---|---|---|
-| **Secrets** tab | secret | `EMAIL_APP_PASSWORD` | a Gmail **app password** |
-| **Variables** tab | variable | `FROM_EMAIL` | `ibotatom@gmail.com` |
+| | |
+|---|---|
+| Workflow | `Weekly AMX buyback run`, id 328050218, **active** |
+| Next run | **Saturday 08 August 2026, 12:00 UTC** = 09:00 São Paulo |
+| Gate | ran at 18:27:03 and passed, **before** commit (18:27:03→04) and email (18:27:04→07) |
+| Action commit | [`9a4ec81`](https://github.com/rafaelxoliver4-art/amx-buyback-tracker/commit/9a4ec81) — ledger **+1/−0** |
+| Email | **arrived in the INBOX**, not spam, 18:27:06Z |
+| BMV vs runner | served normally — no rate limit, no block |
+| Secret in the log | **absent**; GitHub masked it as `***` |
 
-Pushing first would schedule a job that fetches, verifies and commits fine and
-then **fails at the email step every Saturday**. Held back deliberately.
+**THE REMOTE IS NOW AUTHORITATIVE** (CONTEXT §10.1). The Action commits to
+`main` on its own. **`git pull` before any local work.**
 
 ### Published
 
@@ -73,7 +78,129 @@ every workbook cell is unchanged.
 
 ---
 
-## Cycle 3 — 2026-08-05 — the weekly Action and the email (built, NOT live)
+## Cycle 3, part 2 — 2026-08-05 — GO LIVE
+
+The owner created both settings, so the pre-req gate cleared
+(`total_count: 1` for the secret and for the variable, by name only — no value
+was read, and the secret's cannot be).
+
+### The proving run
+
+[**Run 31034726152**](https://github.com/rafaelxoliver4-art/amx-buyback-tracker/actions/runs/31034726152)
+— `workflow_dispatch`, **all 13 steps success**, 18:26:30 → 18:27:12Z (49 s).
+
+**The gate did its job in the right order**, from GitHub's own step timings:
+
+| Step | Window | |
+|---|---|---|
+| Fetch reports from BMV | 18:26:54 → 18:27:00 | success |
+| Parse into the ledger | 18:27:00 → 18:27:01 | success |
+| Build series/workbook/chart | 18:27:01 → 18:27:03 | success |
+| **GATE — acceptance test** | **18:27:03 → 18:27:03** | **PASS, both fixtures** |
+| Commit and push | 18:27:03 → 18:27:04 | after the gate |
+| Email the owner | 18:27:04 → 18:27:07 | after the gate |
+
+### BMV served the runner normally — the one thing untestable locally
+
+No rate limit, no block, no retry, no 429. From the runner:
+
+```
+robots.txt: 404 - no robots.txt published, nothing disallowed
+listing: GET .../informcioncorporativa/AMX-6024-CGEN_CAPIT
+listing: 1255 recompras rows, 958,371 bytes
+downloaded 2026-08-04 -> 2026-08-04_B.pdf (96670 bytes)
+fetch complete: 294 reports available locally
+```
+
+Two runner-vs-local notes worth keeping:
+
+- **The listing was 958,371 bytes on the runner vs 958,373 locally** — a
+  two-byte difference between two fetches minutes apart, i.e. BMV's own page
+  is not byte-stable. Harmless: the parser reads rows, not bytes, and both
+  gave 1,255 rows.
+- **The overlapping-render defect behaved identically on Linux.** The new PDF
+  hit it (`['59,982,000,000', '59,985,000,000']`) and the conservation
+  identity resolved it, exactly as on Windows. That was the parsing risk most
+  likely to be platform-sensitive, and it is not.
+
+### A new report arrived mid-run — reported, not fixed
+
+The runner picked up **2026-08-04**, published after the last local build. So
+the run's figures legitimately differ from the workbook committed an hour
+earlier:
+
+| | committed locally | after the run |
+|---|---|---|
+| YTD MXN | 6,122,896,708 | **6,187,559,662** |
+| YTD shares | 278,500,000 | **281,500,000** |
+| YTD avg | 21.985 | **21.981** |
+
+The new period is **2026-08-04: 237,578,757 MXN / 11,000,000 shares / avg
+21.60**. Both fixtures still PASS — they are anchored to 2025-12-31 and
+Dec-2025, which new data cannot move. **Nothing was edited.**
+
+### The Action's commit
+
+[`9a4ec81`](https://github.com/rafaelxoliver4-art/amx-buyback-tracker/commit/9a4ec81)
+— *"Weekly run 2026-W32 - reports through 2026-08-04"*, authored by
+`amx-buyback-tracker[bot]`:
+
+| Status | Change | File |
+|---|---|---|
+| modified | **+1 / −0** | `data/raw_reports.csv` — **append-only honoured** |
+| added | 96,670 B | `data/raw/2026-08-04_B.pdf` |
+| modified | binary | `output/AMX_Buybacks.xlsx` |
+| modified | binary | `output/amx_buybacks_chart.png` |
+| modified | +1256 / −1256 | `data/listing_inventory.csv` — a snapshot, rewritten each run by design |
+
+`data/listing_rowcount_highwater.json` is **absent from the commit**, which is
+the ratchet behaving correctly: the count stayed 1,255, so there was no new
+high and nothing to write.
+
+### The secret never reached the log
+
+The log was downloaded in full (78,318 bytes, 562 lines) and searched. **I
+have never held the value, so I searched for FORMAT patterns**, not for a
+string I know:
+
+| Searched for | Result |
+|---|---|
+| 16 consecutive lowercase letters (Gmail app-password format) | **clean** |
+| four 4-letter groups, space-separated (as Google displays it) | **clean** |
+| `EMAIL_APP_PASSWORD` followed by `:` or `=` and a value | 1 hit — `EMAIL_APP_PASSWORD: ***`, masked |
+| any `password`-style assignment | **clean** |
+| SMTP `AUTH`/`LOGIN`/`PLAIN` with an argument | **clean** |
+| base64 blobs ≥ 20 chars | 97 hits, all URLs, file paths, git SHAs and wheel hashes |
+
+GitHub's masking engaged (`***` appears 4×). The only mention of the secret
+anywhere in the log is the masked env line.
+
+### The email arrived — verified in the inbox, not just handed to SMTP
+
+Confirmed in Gmail at **18:27:06Z**, labels `INBOX, IMPORTANT, UNREAD`. **Not
+spam.** Subject *"AMX buybacks — week to 04-Aug-2026"* — the normal template,
+not `[ALERT]`, which is correct for a clean run.
+
+- **Headline:** *"AMX bought back **MXN 238 mn** · **11.0 mn shares** ·
+  average **MXN 21.60**"*
+- **Chart inline:** yes — `<img src="cid:…amx-buyback-chart@…">` with a
+  matching inline `image/png` part. Embedded, not linked, which is what makes
+  it render from a private repo.
+- **YTD table:** matches the workbook **exactly**, all 8 months plus TOTAL
+  (6,188 mn / 281.5 mn / 21.98 / 0.47%) — checked cell by cell.
+- **The five ruling-5 notices:** rendered as *"5 routine notices"* at 11 px,
+  65% opacity, below the table. **A quiet footnote, not a warning block**, and
+  no ALERT block appeared at all.
+- **Attachments:** `AMX_Buybacks.xlsx` and `amx_buybacks_chart.png`.
+
+### Next scheduled run
+
+**Saturday 08 August 2026, 12:00 UTC** — 09:00 São Paulo (UTC−3, no DST since
+2019), 06:00 Mexico City. **12.5 h after Friday's ~23:30 UTC BMV filing.**
+
+---
+
+## Cycle 3, part 1 — 2026-08-05 — the weekly Action and the email (built)
 
 ### Handed off
 

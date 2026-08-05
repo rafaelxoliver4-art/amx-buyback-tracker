@@ -10,13 +10,9 @@ pass and 70 tests pass. Published to a **private** GitHub repo,
 **All nine rulings are now settled** — see §11. Two were reversals: the full
 backfill stands (§7.2) and the PDFs stay committed.
 
-**The weekly Action and the email are built** (§10). Read §10.1 first: **the
-remote is now authoritative** and local work must `git pull` before starting.
-
-> **Cycle 3 is built but NOT LIVE.** The workflow is written, tested and
-> committed locally, and has **not been pushed**, because the two
-> owner-created GitHub settings it needs — the `EMAIL_APP_PASSWORD` secret and
-> the `FROM_EMAIL` variable — **do not exist yet**. See §10.7.
+**The weekly Action and the email are LIVE** (§10), proven end to end on
+2026-08-05. Read §10.1 first: **the remote is authoritative** and local work
+must `git pull` before starting.
 
 Everything described in this file is **built**, unless a heading says
 otherwise.
@@ -592,15 +588,12 @@ which ties **exactly** to the true 31-Jul → 30-Sep window
 
 ## 10. Unattended operation
 
-### 10.1 THE REMOTE BECOMES AUTHORITATIVE
+### 10.1 THE REMOTE IS AUTHORITATIVE
 
-Once the weekly Action is live it **commits to `main` on its own**, and the
-local folder stops being the live copy — it goes stale the moment a scheduled
-run lands.
-
-> **Not yet in force.** The workflow has not been pushed (§10.7), so today the
-> local tree is still ahead of the remote. **The moment the first scheduled
-> run lands, this section applies and does not stop applying.**
+**In force since 2026-08-05.** The weekly Action **commits to `main` on its
+own**, so the local folder is no longer the live copy — it goes stale the
+moment a run lands. It already has: commit `9a4ec81` was authored by the
+Action, not by a human.
 
 > **Always `git pull` before doing any local work.** A local commit made on a
 > stale tree will conflict with the Action's, and the ledger is append-only,
@@ -707,29 +700,41 @@ clean fix is to push with a fine-grained PAT instead of `GITHUB_TOKEN` — a
 user-authored commit unambiguously counts — but that needs a new
 owner-created secret and is not approved.
 
-### 10.7 NOT LIVE YET — the two settings the owner must create
+### 10.7 The two owner-created settings
 
-The workflow is written, tested and committed, but **has not been pushed**,
-because neither setting it depends on exists. Verified 2026-08-05 via the
-GitHub API: `actions/secrets` and `actions/variables` both return
-`total_count: 0`.
-
-| Create | Kind | Name | Value |
+| Where | Kind | Name | Holds |
 |---|---|---|---|
-| Repo settings → Secrets and variables → Actions → **Secrets** | secret | `EMAIL_APP_PASSWORD` | a Gmail **app password** for the sending account — not the account password |
+| Settings → Secrets and variables → Actions → **Secrets** | secret | `EMAIL_APP_PASSWORD` | a Gmail **app password** — not the account password |
 | same page → **Variables** | variable | `FROM_EMAIL` | `ibotatom@gmail.com` |
 
-Gmail requires an **app password** (2-Step Verification must be on); an
-ordinary account password is rejected by `smtp.gmail.com`.
-
-Pushing the workflow before these exist would put a job on the schedule that
-fetches, verifies and commits correctly and then **fails at the email step
-every Saturday**. It was held back deliberately. Once both exist, the
-remaining work is: push, trigger one `workflow_dispatch` run, and confirm the
-run log is clean.
+Both created by the owner on 2026-08-05. Gmail requires an **app password**
+(2-Step Verification must be on); an ordinary account password is rejected by
+`smtp.gmail.com`.
 
 **Nobody but the owner ever handles those values.** This repo records only
-their names.
+their names, and the run log shows the secret only as `***`.
+
+### 10.8 Proven live — the acceptance evidence
+
+[Run 31034726152](https://github.com/rafaelxoliver4-art/amx-buyback-tracker/actions/runs/31034726152),
+2026-08-05, `workflow_dispatch`, all 13 steps green in 49 s.
+
+- **The gate ran first and passed**, both fixtures — 18:27:03, before the
+  commit (18:27:03→04) and the email (18:27:04→07).
+- **BMV served the runner normally.** No rate limit, no block, no retry.
+  robots.txt 404 as ever; 1,255 listing rows; one new PDF downloaded. **A
+  datacentre IP is not treated differently** — the open question from the
+  build cycle, now answered.
+- **The overlapping-render defect behaves identically on Linux** — the new PDF
+  hit it and the conservation identity resolved it, exactly as on Windows.
+- **The Action committed `9a4ec81`** with the ledger at **+1 / −0**:
+  append-only held under automation.
+- **The email arrived in the inbox**, not spam, with the chart inline by CID
+  and a YTD table matching the workbook cell for cell.
+- **The secret never reached the log.** Searched by format pattern, since the
+  value is not known to anything but GitHub and Gmail.
+
+**Next run: Saturday 08 August 2026, 12:00 UTC** (09:00 São Paulo).
 
 ## 11. Decisions log
 
