@@ -296,7 +296,26 @@ instead, in `listing.guards`:
   should only ever grow; a shrinking listing is a red flag. Existing data is
   left untouched either way.
 
+**SPEC — not yet implemented, lands in a later cycle.** Two parts of the
+2026-08-04 ruling on listing growth are not built:
+
+- The row-count guard must compare against the **highest count ever
+  recorded**, not the previous run's. As shipped, a listing that shrinks once
+  writes the lower count to `listing_inventory.csv`, and the next run adopts
+  it as the new baseline and stops complaining. A high-water mark has to be
+  stored separately for the guard to survive that.
+- **Revisit the no-cap decision at 5,000 rows.** ~1,255 today, +250 a year, so
+  roughly 2041 — but the review is triggered by the count, not the date.
+
 Cache: a PDF whose sha256 we already hold is never re-downloaded.
+
+### 7.2 Backfill scope — UNRESOLVED
+
+The 2026-08-04 ruling said **2026 only**. Cycle 1 was then instructed to
+backfill the **full listing history** and did. The repo holds the full
+backfill; the chart starts Apr-2023. **The two instructions conflict and the
+Architect has not yet chosen between them.** Nothing has been deleted. Treat
+the current full-history scope as provisional until that is settled.
 
 ## 7.1 Never a silent gap (ruling 4)
 
@@ -364,7 +383,36 @@ not change them:**
 | F | `Avg. Buyback Price (MXN)` |
 
 Extras from column G onward: `G Program Addition (MXN)`,
-`H % Shares Outstanding`, `I Source Report Date`, `J Source PDF URL`.
+`H % Shares Outstanding`, `I Source Report Date`, `J Source PDF URL`,
+`K Month` (ruling 5), `L No Report` (ruling 4).
+
+`Month` and `No Report` are **appended at K and L** so the owner's A–F block
+and the documented G–J extras are both undisturbed.
+
+**The Weekly sheet, in full** — `Date` is the week-ending report date
+(ruling 6):
+
+| | |
+|---|---|
+| A | `Date` |
+| B | `ISO Week` — `2026-W31` |
+| C | `Week Ending (Sun)` |
+| D | `Remaining Resources (MXN)` |
+| E | `Buybacks (MXN mn)` |
+| F | `Shares Outstanding` |
+| G | `Buybacks (# Shares)` |
+| H | `Avg. Buyback Price (MXN)` |
+| I | `Program Addition (MXN)` |
+| J | `% Shares Outstanding` |
+| K | `No Report` — `TRUE` on an ISO week with no report (§7.1) |
+| L | `Source Report Date` — blank when `No Report` is `TRUE` |
+| M | `Source PDF URL` |
+
+Weekly is *not* constrained to the owner's A–F format; only Monthly is.
+
+Both column lists follow §7's selection rule directly: one Weekly row per ISO
+week (the week-ending report, or an explicit `No Report` row), one Monthly row
+per calendar month (the last report of the month).
 
 **Full pesos are stored internally.** Display is a number format only:
 column C `#,##0,,` (MXN mn, 0dp), F `#,##0.00`, H `0.00%`. Never store scaled
@@ -494,6 +542,131 @@ which ties **exactly** to the true 31-Jul → 30-Sep window
   it; at 300+ PDFs that was five minutes a probe.
 - **The chart PNG renders before the Excel chart**, each in its own guard, so
   a native-chart failure cannot cost the PNG or the workbook.
+
+### 2026-08-04 — Architect rulings on Cycle 0's open questions
+
+Issued after Cycle 0, answering the six questions PROGRESS.md raised. Recorded
+verbatim in substance. **Cycle 1 (2026-08-05) then built five of the six; the
+status line under each says where the ruling and the shipped code stand.** One
+ruling — Q2 — conflicts with what was subsequently delivered and is flagged
+for the Architect rather than resolved here.
+
+**Q1 — AGM confirmation: NOT automated.** Scraping "Eventos Relevantes" /
+"Asambleas" is a second scraper for a once-a-year fact and is out of scope.
+The 2026-04-23 / MXN 10,000,000,000 figure **stands as measured**: the
+inter-report seam isolates it to the peso, which is stronger evidence than a
+published resolution. The alerting changes instead:
+
+- an addition already **in** config with `confirmed_by_owner: false` → **one
+  INFO line** naming its date and amount. Not an ALERT. It is known, measured
+  and deliberate.
+- a **new** unexplained rise, absent from config → **ALERT**, as before: daily
+  probe, proposal written back, `confirmed_by_owner: false`.
+- a rise nothing explains → buyback left **negative** and ALERTed. Unchanged.
+
+Revisit automated AGM scraping only if additions ever stop being round
+numbers.
+
+> **Status: implemented in Cycle 1, and the revisit trigger has already
+> fired.** The alerting behaves exactly as ruled. But additions have *already*
+> stopped being round numbers: 2023-04-14 is **1,586,249,981** — a reset to a
+> round *total* of 20.0bn, not a round increment — and three of the other four
+> seams carry a few pesos of BMV drift (+66, +33, +12). By the ruling's own
+> terms, automated AGM scraping is now due for reconsideration. See §6.1.
+
+**Q2 — Backfill depth: 2026 ONLY.** Owner's decision. The full listing already
+holds history back to 2021-08-03 at no extra request cost, so 2021–2025 can be
+backfilled later **without re-architecting anything** — it is one more run of
+the existing selector. Consequence stated plainly: the chart starts at
+**Jan-2026** and lengthens over time; it will not match the owner's three-year
+reference chart until history is added.
+
+> **Status: CONFLICT — not implemented, and superseded in practice.** Cycle 1
+> was instructed to "backfill the FULL listing history, 2021-08-03 to
+> present", and did: 259 PDFs, ledger 39 → 536 rows. The shipped chart starts
+> **Apr-2023**, not Jan-2026, and already spans three years. The ruling's
+> stated consequence no longer holds. **Nothing has been deleted or rolled
+> back** — reverting is a data decision, not a documentation one. The
+> Architect must say which scope stands. See the open question in PROGRESS.md.
+
+**Q3 — Listing growth: NO CAP.** Keep parsing the whole listing every run; it
+is one request. Two guards:
+
+- `max_response_bytes: 10485760` → ALERT if exceeded.
+- the row count must never be **lower than the highest previously recorded
+  count** → ALERT. A shrinking listing means the page, the selector or the
+  issuer id broke.
+
+Revisit the cap decision at **5,000 rows**.
+
+> **Status: implemented in Cycle 1 with two deviations.** (a) The guards live
+> in `listing.guards`, not `integrity`. (b) The shipped comparison is against
+> **the previous run's** row count, not the **highest ever** recorded. Those
+> differ: if the listing ever shrinks and that lower count is written to
+> `listing_inventory.csv`, the next run adopts the lower number as its
+> baseline and stops complaining. The high-water-mark version is the stronger
+> rule and is **not yet built**. The 5,000-row revisit is **not yet recorded
+> anywhere in code**.
+
+**Q4 — Empty weeks: EMIT AN EXPLICIT ROW.** An ISO week with no published
+report gets a row with `buyback_mxn = 0`, `shares_bought = 0`,
+`shares_outstanding` and `remanente` carried forward from the prior week,
+`avg_price` **blank** (not 0 — no trade happened), and a flag
+`no_report: true`. A silently absent week is indistinguishable from a bug, and
+it puts a gap in the chart.
+
+> **Status: implemented in Cycle 1 exactly as ruled** (§7.1), `avg_price`
+> blank included. One detail the ruling did not specify: `pct_outstanding` is
+> written as `0.0`, matching `shares_bought = 0`. The rule currently fires
+> zero times — every ISO week from 2023-03-17 onward has a report.
+
+**Q5 — Workbook date: THE TRUE BMV REPORT DATE.** The owner's "30-May-2026" is
+a Saturday with no report; the real one is Friday **2026-05-29**. The primary
+source wins over the owner's label, per governance. A `Month` column
+("May-26") is added to the Monthly sheet for chart labelling so the
+calendar-month view is not lost.
+
+> **Status: implemented in Cycle 1** (§8.0). Cycle 1 found two further cases:
+> the owner's `27-Jun-2023` is really the **26-Jun** report and `30-Oct-2024`
+> is the **31-Oct** report.
+
+**Q6 — Weekly date semantics: `Date` REMAINS THE REPORT DATE.** Two columns
+are added to the Weekly sheet: `ISO Week` (e.g. `2026-W22`) and
+`Week Ending (Sun)`. All three available, nothing inferred.
+
+> **Status: implemented in Cycle 1** (§8.0).
+
+### 2026-08-04 — Governance decisions
+
+- **The owner has approved the FIRST PUSH: a PRIVATE GitHub repo named
+  `amx-buyback-tracker`.** **Not yet executed.** It happens in a later cycle
+  and is **gated on the acceptance test passing**.
+- **Repo contents when it happens:** `src/`, `config/`, `tests/`, `docs/`,
+  `data/raw_reports.csv`, `data/listing_inventory.csv`,
+  `output/AMX_Buybacks.xlsx`, `output/amx_buybacks_chart.png`, `CONTEXT.md`,
+  `PROGRESS.md`, `README.md`, `requirements.txt`.
+  **Gitignored:** `data/raw/*.pdf` (regenerable, sha256-cached),
+  `data/run_log.txt`, `__pycache__/`, `*.pyc`, `.venv/`, `venv/`.
+- **The ledger MUST be committed.** The future weekly Action reads it for
+  prior state and writes the updated version back. That is the reason data
+  lives in the repo at all.
+- **Still NOT approved and NOT built:** GitHub Actions, any email, any repo
+  secret.
+- **Authentication is the owner's to arrange.** If `gh auth status` is not
+  already authenticated when the push cycle runs, **STOP and report** — never
+  request, create, read or store a token, password or SSH key.
+
+> **Status: nothing executed.** No remote, no GitHub repo, no workflow file,
+> no secret. `git remote -v` is empty.
+>
+> **One conflict to settle before the push cycle:** the ruling gitignores
+> `data/raw/*.pdf`, but the repo currently **commits** them, and
+> `.gitignore` carries an explicit note saying so deliberately ("the PDFs are
+> the primary evidence for the backfill"). 331 PDFs, ~4 MB, are already in
+> git history across the Cycle 0 and Cycle 1 commits, so adding the ignore
+> rule now would stop tracking future PDFs but would **not** remove the
+> existing ones from history. `.gitignore` was left untouched this cycle — it
+> is part of the push spec, and building the push spec is a later cycle.
 
 ### 2026-08-04 — relocation
 

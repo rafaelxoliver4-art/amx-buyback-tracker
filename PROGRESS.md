@@ -5,6 +5,89 @@ the standing brief.
 
 ---
 
+## 2026-08-04 — Architect rulings + governance decisions (documentation cycle)
+
+**No code was changed and no build was run.** Nothing in `src/`, `config/`,
+`tests/` or `output/` was touched; the fetcher, parser, builder and acceptance
+test were not run. Only `CONTEXT.md` and `PROGRESS.md` were edited.
+
+### What was decided
+
+- **Q1 — AGM confirmation: not automated.** A second scraper for a
+  once-a-year fact is out of scope; the 2026-04-23 / MXN 10,000,000,000 figure
+  stands as measured, because the inter-report seam pins it to the peso.
+- **Q1 alerting** — an addition already in config with
+  `confirmed_by_owner: false` emits **one INFO line**, not an ALERT; a **new**
+  unexplained rise still ALERTs and gets probed; a rise nothing explains still
+  leaves the buyback negative and ALERTs.
+- **Q2 — Backfill depth: 2026 only.** 2021–2025 can be added later with one
+  more run of the existing selector, no re-architecting.
+- **Q3 — Listing growth: no cap.** Two guards instead: ALERT over 10 MB, and
+  ALERT if the row count drops below the highest ever recorded. Revisit the
+  cap at 5,000 rows.
+- **Q4 — Empty weeks: emit an explicit row** — zero buyback, zero shares,
+  balances carried forward, `avg_price` blank, `no_report: true`.
+- **Q5 — Workbook date: the true BMV report date**, plus a `Month` column on
+  Monthly for chart labelling.
+- **Q6 — Weekly `Date` stays the report date**, plus `ISO Week` and
+  `Week Ending (Sun)`.
+- **Governance — the first push is approved:** a **private** GitHub repo named
+  `amx-buyback-tracker`, **not yet executed**, gated on the acceptance test
+  passing. Actions, email and secrets remain unapproved and unbuilt.
+  Authentication is the owner's to arrange: if `gh auth status` is not already
+  authenticated when the push cycle runs, **stop and report** — never request,
+  create, read or store a credential.
+
+### These rulings arrived after Cycle 1 had already shipped
+
+The task briefing for this cycle describes the repo as it stood at the end of
+Cycle 0 and says the next cycle is "the Cycle 1 build — styling, the bar +
+%-line chart, the YTD table, and the gated first push". **Cycle 1 was built on
+2026-08-05**: the styling, the chart, the YTD table and the full backfill are
+all delivered, committed and passing. The rulings have therefore been recorded
+as history, each annotated with where it now stands, rather than as pending
+spec. Writing "not yet implemented" against five already-shipped, tested
+behaviours would have made the standing brief wrong.
+
+Where a ruling **is** already built exactly as stated — Q1's alerting, Q4, Q5,
+Q6 — it is marked implemented and nothing changed. Three items do **not**
+match, and are flagged rather than resolved:
+
+1. **Q2 conflicts with what was delivered.** This ruling says 2026 only;
+   Cycle 1's briefing said "backfill the FULL listing history, 2021-08-03 to
+   present", and it did — 259 PDFs, ledger 39 → 536 rows. The shipped chart
+   starts **Apr-2023** and already spans three years, so the ruling's stated
+   consequence ("the chart starts at Jan-2026 … will not match the owner's
+   3-year reference chart") no longer holds. Nothing was deleted or rolled
+   back — that is a data decision, not a documentation one.
+2. **Q3 is built, but with the weaker comparison.** The guard compares against
+   the **previous run's** row count, not the **highest ever**; a one-off shrink
+   would be adopted as the new baseline. Recorded as spec in CONTEXT §7, not
+   built. The 5,000-row revisit was not recorded anywhere before now.
+3. **Q1's own revisit trigger has already fired.** The ruling says to revisit
+   automated AGM scraping "only if additions ever stop being round numbers".
+   Cycle 1 found they already have: 2023-04-14 is **1,586,249,981**, a reset to
+   a round *total* of 20.0bn rather than a round increment, and three of the
+   other four seams carry a few pesos of BMV drift.
+
+### Also flagged, for the push cycle
+
+The governance ruling gitignores `data/raw/*.pdf`, but the repo **commits**
+them today and `.gitignore` carries an explicit note saying that is
+deliberate. 331 PDFs (~4 MB) are already in git history from Cycles 0 and 1,
+so adding the rule later would stop tracking new PDFs without removing the
+existing ones. `.gitignore` was left untouched — it belongs to the push spec,
+and building the push spec is a later cycle.
+
+### Next
+
+Settle the three conflicts above — Q2 scope above all, since it decides
+whether the delivered backfill and chart stand. Then the push cycle: the
+private repo, gated on the acceptance test, with authentication already
+arranged by the owner.
+
+---
+
 ## Cycle 1 — 2026-08-04/05 — full backfill, workbook styling, and the chart
 
 ### Handed off
