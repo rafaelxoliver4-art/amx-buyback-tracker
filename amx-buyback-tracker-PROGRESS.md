@@ -1,7 +1,8 @@
-# PROGRESS — amx-buyback-tracker
+# amx-buyback-tracker — PROGRESS
 
-Running record, newest cycle at the top. See [`CONTEXT.md`](CONTEXT.md) for
-the standing brief.
+Running record, newest cycle at the top. See
+[`amx-buyback-tracker-CONTEXT.md`](amx-buyback-tracker-CONTEXT.md) for the
+standing brief.
 
 ---
 
@@ -9,7 +10,9 @@ the standing brief.
 
 **No code was changed and no build was run.** Nothing in `src/`, `config/`,
 `tests/` or `output/` was touched; the fetcher, parser, builder and acceptance
-test were not run. Only `CONTEXT.md` and `PROGRESS.md` were edited.
+test were not run. Only the two living files were edited — and, in the
+2026-08-05 addendum, renamed to `amx-buyback-tracker-CONTEXT.md` and
+`amx-buyback-tracker-PROGRESS.md`.
 
 ### What was decided
 
@@ -69,6 +72,24 @@ match, and are flagged rather than resolved:
    Cycle 1 found they already have: 2023-04-14 is **1,586,249,981**, a reset to
    a round *total* of 20.0bn rather than a round increment, and three of the
    other four seams carry a few pesos of BMV drift.
+
+### Addendum, 2026-08-05 — the living files are renamed
+
+`CONTEXT.md` → `amx-buyback-tracker-CONTEXT.md`, `PROGRESS.md` →
+`amx-buyback-tracker-PROGRESS.md`, both via `git mv` so history follows them.
+Seven references across five files were updated in the same pass: both H1
+headings, the header link in this file, the repo-contents list and the
+open-question pointer in CONTEXT, the two README links, the repo tree in this
+file, a comment in `config/chart.yaml` and a pointer in `docs/recon_notes.md`.
+A repo-wide grep for the bare old names now returns nothing.
+
+`config/chart.yaml` and `docs/recon_notes.md` were edited despite this being a
+documentation cycle: the addendum explicitly directs the reference sweep at
+`config/*.yaml`, `src/*.py` and `tests/*`. Both changes are comment text only,
+no behaviour.
+
+Sibling projects under `projects\` are unchanged. The convention applies to
+them too, but each migrates by its own task.
 
 ### Also flagged, for the push cycle
 
@@ -387,7 +408,8 @@ amx-buyback-tracker/
 │   ├── test_parser.py             parser unit tests over 4 saved PDFs
 │   ├── test_integrity.py          al-ultimo vs prior al-presente chain
 │   └── expected_backfill_2026.yaml  the owner's known-correct table
-├── CONTEXT.md  PROGRESS.md  README.md  requirements.txt  .gitignore
+├── amx-buyback-tracker-CONTEXT.md   amx-buyback-tracker-PROGRESS.md
+├── README.md  requirements.txt  .gitignore
 ```
 
 #### Recon findings

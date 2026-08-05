@@ -139,8 +139,8 @@ multiple series / casas de bolsa and the missing programme-amount field.
 
 ## 5. Fragility register for the unattended weekly run
 
-Ranked by likelihood × impact. See PROGRESS.md for the same list with
-mitigations.
+Ranked by likelihood × impact. See `amx-buyback-tracker-PROGRESS.md` for the
+same list with mitigations.
 
 | # | Risk | Detected by |
 |---|---|---|

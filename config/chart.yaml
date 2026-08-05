@@ -129,7 +129,7 @@ excel:
   height_cm: 8.6
   # Properties openpyxl/OOXML cannot express the way matplotlib can. Recorded
   # here so the difference is documented rather than silently absorbed - see
-  # PROGRESS.md Cycle 1 and the report.
+  # amx-buyback-tracker-PROGRESS.md Cycle 1 and the report.
   known_limitations:
     - "data label rotation (45 deg) is not emitted by openpyxl's DataLabelList"
     - "marker fill/border colours fall back to the theme, not white-on-brown"

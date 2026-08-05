@@ -4,9 +4,11 @@ Tracks **América Móvil (AMX)** share buybacks from the primary source: the
 daily "Adquisición de Acciones por Emisora (Recompras)" PDFs published by the
 Bolsa Mexicana de Valores.
 
-> **Read [`CONTEXT.md`](CONTEXT.md) first.** It is the standing brief: the
-> source, the derivation, the governance rules and the decisions log.
-> [`PROGRESS.md`](PROGRESS.md) is the running cycle-by-cycle record.
+> **Read [`amx-buyback-tracker-CONTEXT.md`](amx-buyback-tracker-CONTEXT.md)
+> first.** It is the standing brief: the source, the derivation, the
+> governance rules and the decisions log.
+> [`amx-buyback-tracker-PROGRESS.md`](amx-buyback-tracker-PROGRESS.md) is the
+> running cycle-by-cycle record.
 
 **This project is isolated.** Everything lives in this folder. Local git only —
 no remote, no GitHub Actions, no email, no secrets.

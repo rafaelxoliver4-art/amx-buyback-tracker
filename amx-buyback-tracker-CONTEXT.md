@@ -1,4 +1,4 @@
-# CONTEXT — amx-buyback-tracker
+# amx-buyback-tracker — CONTEXT
 
 The standing brief for this project. **Bar: someone reading only this file
 could rebuild the repo from scratch.** Read this before changing anything.
@@ -543,9 +543,23 @@ which ties **exactly** to the true 31-Jul → 30-Sep window
 - **The chart PNG renders before the Excel chart**, each in its own guard, so
   a native-chart failure cannot cost the PNG or the workbook.
 
+### 2026-08-05 — the two living files are named after the project
+
+`CONTEXT.md` → **`amx-buyback-tracker-CONTEXT.md`**
+`PROGRESS.md` → **`amx-buyback-tracker-PROGRESS.md`**
+
+Done with `git mv`, so history follows the files
+(`git log --follow` still reaches the Cycle 0 commit). Both H1 headings and
+every cross-reference in the repo were updated in the same pass.
+
+The convention applies to sibling projects under `projects\` too, but **each
+migrates on its own next cycle, by its own task.** Reaching into a sibling
+folder is an isolation breach; nothing outside this folder was touched.
+
 ### 2026-08-04 — Architect rulings on Cycle 0's open questions
 
-Issued after Cycle 0, answering the six questions PROGRESS.md raised. Recorded
+Issued after Cycle 0, answering the six questions
+`amx-buyback-tracker-PROGRESS.md` raised. Recorded
 verbatim in substance. **Cycle 1 (2026-08-05) then built five of the six; the
 status line under each says where the ruling and the shipped code stand.** One
 ruling — Q2 — conflicts with what was subsequently delivered and is flagged
@@ -587,7 +601,8 @@ reference chart until history is added.
 > **Apr-2023**, not Jan-2026, and already spans three years. The ruling's
 > stated consequence no longer holds. **Nothing has been deleted or rolled
 > back** — reverting is a data decision, not a documentation one. The
-> Architect must say which scope stands. See the open question in PROGRESS.md.
+> Architect must say which scope stands. See the open question in
+> `amx-buyback-tracker-PROGRESS.md`.
 
 **Q3 — Listing growth: NO CAP.** Keep parsing the whole listing every run; it
 is one request. Two guards:
@@ -643,8 +658,9 @@ are added to the Weekly sheet: `ISO Week` (e.g. `2026-W22`) and
   and is **gated on the acceptance test passing**.
 - **Repo contents when it happens:** `src/`, `config/`, `tests/`, `docs/`,
   `data/raw_reports.csv`, `data/listing_inventory.csv`,
-  `output/AMX_Buybacks.xlsx`, `output/amx_buybacks_chart.png`, `CONTEXT.md`,
-  `PROGRESS.md`, `README.md`, `requirements.txt`.
+  `output/AMX_Buybacks.xlsx`, `output/amx_buybacks_chart.png`,
+  `amx-buyback-tracker-CONTEXT.md`, `amx-buyback-tracker-PROGRESS.md`,
+  `README.md`, `requirements.txt`.
   **Gitignored:** `data/raw/*.pdf` (regenerable, sha256-cached),
   `data/run_log.txt`, `__pycache__/`, `*.pyc`, `.venv/`, `venv/`.
 - **The ledger MUST be committed.** The future weekly Action reads it for
