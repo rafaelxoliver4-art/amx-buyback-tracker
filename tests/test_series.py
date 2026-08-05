@@ -132,17 +132,100 @@ def test_no_empty_rows_when_weeks_are_contiguous():
 
 
 def test_weekly_frame_has_no_missing_iso_weeks():
-    """The whole point of ruling 4: the built frame is gap-free."""
+    """Ruling 4: the built frame is gap-free.
+
+    Since the month-boundary split a week may legitimately appear TWICE, so
+    the gap test runs over DISTINCT weeks.
+    """
     log = _Log()
     weekly, _ = build_series.build(CFG, log, probe=False)
     if not weekly:
         pytest.skip("ledger is empty")
-    weeks = [r["iso_week"] for r in weekly]
-    assert len(weeks) == len(set(weeks)), "duplicate ISO week in the weekly frame"
-    # every consecutive pair must be exactly 7 days apart at the Sunday
-    ends = sorted(r["week_ending_sun"] for r in weekly)
+    ends = sorted({r["week_ending_sun"] for r in weekly})
     gaps = [(b - a).days for a, b in zip(ends, ends[1:])]
     assert set(gaps) <= {7}, f"weekly frame has gaps: {sorted(set(gaps))}"
+
+
+# --------------------------------------------------------------------------
+# 2026-08-05 — weekly rows close on month end, and reconcile to Monthly
+# --------------------------------------------------------------------------
+def test_every_weekly_row_lies_inside_one_calendar_month():
+    weekly, _ = _weekly_monthly()
+    bad = [r for r in weekly
+           if (r["period_start"].year, r["period_start"].month)
+           != (r["period_end"].year, r["period_end"].month)]
+    assert not bad, f"weekly rows straddling a month: {[str(r['date']) for r in bad[:5]]}"
+
+
+def test_last_weekly_row_of_each_month_is_the_monthly_report():
+    """The guarantee the reconciliation rests on."""
+    weekly, monthly = _weekly_monthly()
+    monthly_date = {(m["date"].year, m["date"].month): m["date"] for m in monthly}
+    last_weekly: dict = {}
+    for r in weekly:
+        if not r["no_report"]:
+            last_weekly[(r["date"].year, r["date"].month)] = r["date"]
+    for k, d in last_weekly.items():
+        assert d == monthly_date[k], \
+            f"{k}: last weekly row ends {d}, Monthly row ends {monthly_date[k]}"
+
+
+def test_month_end_flag_marks_exactly_the_month_closing_rows():
+    weekly, monthly = _weekly_monthly()
+    flagged = {r["date"] for r in weekly if r["month_end"]}
+    assert flagged == {m["date"] for m in monthly}
+    assert not any(r["month_end"] for r in weekly if r["no_report"]), \
+        "a no-report row cannot close a month - there is no report"
+
+
+def test_weekly_reconciles_to_monthly_for_every_month():
+    """THE acceptance test for the split: to the peso and to the share."""
+    log = _Log()
+    weekly, monthly = build_series.build(CFG, log, probe=False)
+    if not monthly:
+        pytest.skip("ledger is empty")
+    rec = build_series.reconcile_weekly_to_monthly(weekly, monthly, log)
+    assert rec, "no months reconciled"
+    broken = [f"{r['month']}: weekly {r['weekly_mxn']:,} vs monthly {r['monthly_mxn']:,}, "
+              f"shares {r['weekly_shares']:,} vs {r['monthly_shares']:,}"
+              for r in rec if not r["ok"]]
+    assert not broken, "weekly does not reconcile to monthly:\n" + "\n".join(broken)
+    assert sum(r["weekly_mxn"] for r in rec) == sum(r["monthly_mxn"] for r in rec)
+    assert sum(r["weekly_shares"] for r in rec) == sum(r["monthly_shares"] for r in rec)
+
+
+def test_a_straddling_week_is_actually_split():
+    """Guard against the split silently stopping: a real series must contain
+    at least one ISO week appearing twice."""
+    weekly, _ = _weekly_monthly()
+    real = [r for r in weekly if not r["no_report"]]
+    seen: dict = {}
+    for r in real:
+        seen[r["iso_week"]] = seen.get(r["iso_week"], 0) + 1
+    split = {k: v for k, v in seen.items() if v > 1}
+    assert split, "no week was split at a month boundary - is the rule still on?"
+    for k, v in split.items():
+        assert v == 2, f"ISO week {k} produced {v} rows; a month boundary splits it in 2"
+
+
+def test_current_year_weekly_series_is_complete():
+    """Every ISO week from the year's first report to the latest has a row."""
+    weekly, _ = _weekly_monthly()
+    year = max(r["date"].year for r in weekly)
+    rows = [r for r in weekly if r["date"].year == year]
+    if len(rows) < 2:
+        pytest.skip("not enough rows in the current year")
+    ends = sorted({r["week_ending_sun"] for r in rows})
+    gaps = [(b - a).days for a, b in zip(ends, ends[1:])]
+    assert set(gaps) <= {7}, f"{year} weekly series has a gap: {sorted(set(gaps))}"
+
+
+def _weekly_monthly():
+    log = _Log()
+    weekly, monthly = build_series.build(CFG, log, probe=False)
+    if not weekly:
+        pytest.skip("ledger is empty")
+    return weekly, monthly
 
 
 # --------------------------------------------------------------------------

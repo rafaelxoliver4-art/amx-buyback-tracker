@@ -208,8 +208,19 @@ workbook:
 
   # Weekly: ruling 6. Date = the week-ending REPORT date, plus ISO Week and
   # the Sunday that ends that ISO week.
+  #
+  # 2026-08-05: a weekly period is an ISO week EXCEPT that a week crossing a
+  # calendar-month boundary is SPLIT at the last report of that month. Every
+  # weekly row therefore lies entirely inside one calendar month, and the last
+  # weekly row of a month closes on the same report the Monthly row uses - so
+  # the weekly rows sum to the monthly ones exactly. Where a week was split,
+  # both halves carry the SAME ISO Week label; that is correct, not a bug.
+  # Period Start / Period End / Month End make the split legible.
   weekly_columns:
     - {key: date,                header: "Date",                        number_format: "dd-mmm-yyyy"}
+    - {key: period_start,        header: "Period Start",                number_format: "dd-mmm-yyyy"}
+    - {key: period_end,          header: "Period End",                  number_format: "dd-mmm-yyyy"}
+    - {key: month_end,           header: "Month End",                   number_format: "General"}
     - {key: iso_week,            header: "ISO Week",                    number_format: "General"}
     - {key: week_ending_sun,     header: "Week Ending (Sun)",           number_format: "dd-mmm-yyyy"}
     - {key: remanente,           header: "Remaining Resources (MXN)",   number_format: "#,##0"}

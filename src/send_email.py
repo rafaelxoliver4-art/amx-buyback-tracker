@@ -101,9 +101,42 @@ def build_html(cfg: dict, latest: dict | None, ytd: list[list],
     if no_new_reports:
         p.append(f'<p style="margin:0 0 14px 0;">{b["no_new_reports_text"]}</p>')
     if latest:
+        # (1) the report these figures come from, with a link to the source PDF
+        src = (f'<a href="{latest["pdf_url"]}" style="color:#4A3F35;">BMV report</a>'
+               if latest.get("pdf_url") else "BMV report")
         p.append(
-            f'<p style="margin:0 0 6px 0;font-size:16px;">'
-            f'<b>Week to {latest["date"]}</b></p>'
+            f'<p style="margin:0 0 10px 0;font-size:16px;">'
+            f'<b>Week to {latest["date"]}</b>'
+            f'<span style="font-size:12px;opacity:.7;"> &nbsp;·&nbsp; as reported in the '
+            f'{latest["date"]} {src}</span></p>'
+        )
+
+        # (2) THE TWO PRIMARY-SOURCE FIGURES - everything else derives from
+        #     these, so the email shows the inputs, not just the outputs.
+        def _delta(v, unit=""):
+            if v is None:
+                return ""
+            sign = "+" if v > 0 else ("−" if v < 0 else "±")
+            colour = "#C00000" if v < 0 else "#4A3F35"
+            return (f'<span style="font-size:12px;color:{colour};"> '
+                    f'{sign}{abs(v):,}{unit}</span>')
+
+        th = ("text-align:left;padding:3px 14px 3px 0;font-size:12px;opacity:.7;"
+              "white-space:nowrap;vertical-align:baseline;")
+        tv = "text-align:right;padding:3px 0;white-space:nowrap;vertical-align:baseline;"
+        p.append(
+            '<table style="border-collapse:collapse;margin:0 0 14px 0;">'
+            f'<tr><td style="{th}">Remaining resources (MXN)</td>'
+            f'<td style="{tv}"><b>{latest["remanente"]:,}</b>'
+            f'{_delta(latest.get("remanente_delta"))}</td></tr>'
+            f'<tr><td style="{th}">Shares outstanding</td>'
+            f'<td style="{tv}"><b>{latest["shares_outstanding"]:,}</b>'
+            f'{_delta(latest.get("shares_delta"))}</td></tr>'
+            '</table>'
+        )
+
+        # (3) the derived headline, unchanged
+        p.append(
             f'<p style="margin:0 0 16px 0;font-size:15px;">'
             f'AMX bought back <b>MXN {_fmt_mxn_mn(latest["buyback_mxn"])} mn</b> '
             f'&nbsp;·&nbsp; <b>{_fmt_sh_mn(latest["shares_bought"])} mn shares</b> '
@@ -235,13 +268,26 @@ def send(cfg: dict, msg: EmailMessage, password: str, log: RunLog) -> bool:
 
 # --------------------------------------------------------------------------
 def latest_period(monthly: list[dict], weekly: list[dict]) -> dict | None:
+    """The latest derived period, plus the two PRIMARY-SOURCE balances it
+    closes on and how they moved since the prior period."""
     frame = weekly or monthly
     rows = [r for r in frame if r.get("buyback_mxn") is not None]
     if not rows:
         return None
     r = rows[-1]
-    return {"date": r["date"].strftime("%d-%b-%Y"), "buyback_mxn": r["buyback_mxn"],
-            "shares_bought": r["shares_bought"], "avg_price": r["avg_price"]}
+    prior = rows[-2] if len(rows) > 1 else None
+    return {
+        "date": r["date"].strftime("%d-%b-%Y"),
+        "buyback_mxn": r["buyback_mxn"],
+        "shares_bought": r["shares_bought"],
+        "avg_price": r["avg_price"],
+        # the two fields every other number is derived from
+        "remanente": r["remanente"],
+        "shares_outstanding": r["shares_outstanding"],
+        "remanente_delta": (r["remanente"] - prior["remanente"]) if prior else None,
+        "shares_delta": (r["shares_outstanding"] - prior["shares_outstanding"]) if prior else None,
+        "pdf_url": r.get("pdf_url") or "",
+    }
 
 
 def main() -> int:

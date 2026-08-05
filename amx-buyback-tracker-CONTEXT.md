@@ -400,6 +400,57 @@ Two ordering details that make it safe:
 Setting it raises an INFO notice recording how many rows were hidden, so a
 short workbook is never mistaken for missing data.
 
+## 7.0 The weekly period — ISO weeks, split at month end
+
+**A weekly period is an ISO week, EXCEPT that a week crossing a calendar-month
+boundary is SPLIT at the last report of that month.**
+
+Two consequences, and they are the whole point:
+
+1. **Every weekly row lies entirely inside one calendar month.**
+2. **The last weekly row of every month closes on that month's last BMV
+   report — the same report the Monthly row uses.**
+
+### The reconciliation guarantee
+
+> **For every month M, to the peso and to the share:**
+> `sum(weekly buyback_mxn in M) == monthly buyback_mxn for M`
+> `sum(weekly shares_bought in M) == monthly shares_bought for M`
+
+It holds by construction, not by luck. Each row's buyback is
+`prior.remanente + additions − this.remanente`, so within a month the weekly
+rows **telescope** to `(last report of M−1) − (last report of M)` — which is
+the monthly figure by definition, *provided* the last weekly row of each month
+closes on that month's last report. That proviso is exactly what the split
+buys.
+
+Before the split, a week straddling month end sat in one bucket, so month M's
+weekly rows stopped short of M's last report and the two frames disagreed.
+
+`reconcile_weekly_to_monthly()` checks every month on **every build** and
+ALERTs on a break; a test asserts it across the whole series. Neither frame is
+ever adjusted to make them agree.
+
+### The columns that make the split legible
+
+| Column | Meaning |
+|---|---|
+| `Date` | the report date the row closes on (ruling Q5) — unchanged |
+| `Period Start` | the **first** report date in the row |
+| `Period End` | the **last** report date in the row (= `Date`) |
+| `Month End` | TRUE when this row closes a calendar month |
+
+`ISO Week` and `Week Ending (Sun)` are kept. **Where a week was split, both
+halves carry the same ISO week label. That is correct, not a bug** — they are
+two halves of one ISO week.
+
+**One deliberate choice worth knowing:** `Period Start` is the *first report
+in the row*, not the day after the previous row's report. Those differ at a
+month boundary — the measured buyback always spans from the **prior row's**
+report, as any running balance does, so the cash covered can begin a day or
+two before `Period Start`. Naming the first report keeps the column
+unambiguous and keeps "entirely inside one calendar month" literally true.
+
 ## 7.1 Never a silent gap (ruling 4)
 
 An ISO week with **no BMV report at all** gets an **explicit row**:
@@ -605,18 +656,53 @@ anything.
 
 ### 10.2 What runs, and when
 
-`.github/workflows/weekly.yml`, **Saturdays 12:00 UTC** (`0 12 * * 6`), plus
-`workflow_dispatch` for a manual run. Nothing else triggers it — no push
-trigger, no pull-request trigger, no second schedule.
+`.github/workflows/weekly.yml`, **`0 1 * * 6` — Saturday 01:00 UTC, which is
+FRIDAY 22:00 in São Paulo**, plus `workflow_dispatch` for a manual run.
+Nothing else triggers it — no push trigger, no pull-request trigger, no second
+schedule. *(Moved from Saturday 12:00 UTC on 2026-08-05 so the mail lands on
+Friday evening.)*
 
 The cron is **duplicated** in the workflow and in `config/schedule.yaml`,
 because Actions cannot read our config. `tests/test_workflow.py` asserts the
 two agree, so they cannot drift.
 
-Timing, in full: GitHub cron is always UTC; BMV files ~17:30 in Mexico City
-(UTC-6 year round — Mexico abolished DST in 2022), so Friday's report is
-public by ~23:30 UTC Friday. Saturday noon UTC is ~12.5 hours later, and
-09:00 in São Paulo where the owner reads it.
+**The arithmetic, stated explicitly.** Both zones are fixed; neither observes
+DST:
+
+| | offset | |
+|---|---|---|
+| Mexico City | **UTC−6** | DST abolished October 2022 |
+| São Paulo | **UTC−3** | DST abolished 2019 |
+
+**Mexico City is 3 hours BEHIND São Paulo.**
+
+```
+BMV files   16:39–17:59  Mexico City   (observed range across 343 reports)
+          = 19:39–20:59  São Paulo
+          = 22:39–23:59  UTC, Friday
+
+The run at  01:00        UTC Saturday
+          = 22:00        Friday, São Paulo   <- when the owner reads it
+          = 19:00        Friday, Mexico City
+```
+
+That is **~1 hour after the latest filing ever observed**.
+
+**Why so tight a buffer is safe.** The fetcher selects by **walking the
+listing**, not by asking for "today", and the ledger is **append-only**. A
+report that is late — or missed entirely — is simply picked up by the
+following week's run and appended then. A late filing costs **one week of
+freshness; it can never cost data**, and it can never produce a wrong figure,
+because the acceptance gate would stop the run before anything was committed
+or emailed.
+
+GitHub also queues scheduled jobs under load and may start them minutes late,
+which eats into a 1-hour buffer more than it did a 12-hour one. Same
+consequence: freshness, never data.
+
+**If more clearance is wanted, change the hour in two places** — this file's
+workflow and `config/schedule.yaml` — and the test that asserts they agree
+holds the pair together. That is the whole fix.
 
 `concurrency` pins the job to one run at a time, with `cancel-in-progress:
 false` — a cancelled run could abandon a half-written ledger commit.
@@ -646,6 +732,24 @@ mark, in one commit named for the ISO week and the latest report date.
 
 A week with **no new reports** commits nothing and **still emails**, saying so
 plainly. A silent week is indistinguishable from a dead job.
+
+### 10.4a What the email contains
+
+In this order:
+
+1. **The report date**, with a link to that report's source PDF on BMV.
+2. **The two primary-source balances**, in full pesos and shares, each with
+   its change since the prior period — `REMANENTE DE RECURSOS → Al presente`
+   and `SALDOS → Al presente reporte → Acciones en Circulación`. **These are
+   the two fields §4 says everything derives from, so the email shows the
+   inputs, not only the outputs.** A useful property falls out: each delta
+   equals the derived figure below it, so the email carries its own arithmetic
+   check.
+3. **The derived headline** — buybacks MXN mn · shares · average price.
+4. **The chart**, embedded by CID.
+5. **The YTD table**, read straight from the workbook's YTD sheet so the two
+   can never disagree.
+6. **Notices** — ALERTs prominent, INFO as a quiet footnote (§10.5).
 
 ### 10.5 Secrets are owner-managed and referenced by name only
 

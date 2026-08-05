@@ -144,10 +144,42 @@ def ledger_rows(cfg: dict) -> list[dict]:
 
 
 def _bucket_last(rows: list[dict], keyfn) -> list[dict]:
-    buckets: dict = {}
+    """The LAST report in each bucket, plus the FIRST report date in it.
+
+    Ordered by the closing report's date rather than by the key, because the
+    weekly key spans ISO year and calendar month and those do not sort
+    chronologically at every year boundary (2024-12-30 is ISO 2025-W01).
+    """
+    first: dict = {}
+    last: dict = {}
     for r in rows:                       # rows are date-sorted
-        buckets[keyfn(r["report_date"])] = r
-    return [buckets[k] for k in sorted(buckets)]
+        k = keyfn(r["report_date"])
+        first.setdefault(k, r["report_date"])
+        last[k] = r
+    return [{**last[k], "period_start": first[k]}
+            for k in sorted(last, key=lambda k: last[k]["report_date"])]
+
+
+# --------------------------------------------------------------------------
+# period keys
+# --------------------------------------------------------------------------
+def week_key(d: dt.date):
+    """An ISO week, SPLIT at a calendar-month boundary.
+
+    A week that straddles month end therefore yields TWO rows - one closing on
+    the month's last report, one closing on the week's last report. That is
+    what makes the weekly rows reconcile to the monthly ones: the last weekly
+    row of month M ends on exactly the report the Monthly row for M uses, so
+    the weekly buybacks within M telescope to the monthly figure.
+
+    Both halves keep the same ISO week label, which is correct, not a bug.
+    """
+    iso_year, iso_week, _ = d.isocalendar()
+    return (iso_year, iso_week, d.year, d.month)
+
+
+def month_key(d: dt.date):
+    return (d.year, d.month)
 
 
 # --------------------------------------------------------------------------
@@ -155,7 +187,8 @@ def _bucket_last(rows: list[dict], keyfn) -> list[dict]:
 # --------------------------------------------------------------------------
 def build_frame(anchors: list[dict], additions: list[dict], cfg: dict,
                 log: RunLog, probe: bool = True,
-                used_unconfirmed: dict | None = None) -> list[dict]:
+                used_unconfirmed: dict | None = None,
+                month_end_dates: set | None = None) -> list[dict]:
     frame: list[dict] = []
     for i, r in enumerate(anchors):
         d = r["report_date"]
@@ -173,6 +206,12 @@ def build_frame(anchors: list[dict], additions: list[dict], cfg: dict,
             "month_label": month_label(cfg, d),
             "iso_week": iso_week_label(cfg, d),
             "week_ending_sun": week_ending_sunday(d),
+            # Period Start is the FIRST report in the bucket and Period End the
+            # last, so both lie inside one calendar month. The buyback itself is
+            # measured from the PRIOR row's report - a running balance always is.
+            "period_start": r.get("period_start", d),
+            "period_end": d,
+            "month_end": bool(month_end_dates and d in month_end_dates),
             "no_report": False,
             "is_anchor": i == 0,
         }
@@ -228,6 +267,61 @@ def apply_display_filter(cfg: dict, frame: list[dict]) -> list[dict]:
     if not start:
         return frame
     return [r for r in frame if r["date"].year >= int(start)]
+
+
+# --------------------------------------------------------------------------
+# the weekly -> monthly reconciliation (2026-08-05)
+# --------------------------------------------------------------------------
+def reconcile_weekly_to_monthly(weekly: list[dict], monthly: list[dict],
+                                log: RunLog) -> list[dict]:
+    """Every month's weekly rows must sum to its monthly row, exactly.
+
+    This is what the month-boundary split buys. Each row's buyback is
+    `prior.remanente + additions - this.remanente`, so within a month the
+    weekly rows telescope to `(last report of M-1) - (last report of M)` -
+    which is the monthly figure by definition, PROVIDED the last weekly row of
+    each month closes on that month's last report. That is exactly what
+    week_key() guarantees.
+
+    Returns the per-month breakdown. A break is ALERTed and never silently
+    reconciled away.
+    """
+    by_month: dict = {}
+    for r in weekly:
+        if r["is_anchor"] or r["buyback_mxn"] is None:
+            continue
+        k = (r["date"].year, r["date"].month)
+        b = by_month.setdefault(k, {"buyback_mxn": 0, "shares_bought": 0, "rows": 0})
+        b["buyback_mxn"] += r["buyback_mxn"]
+        b["shares_bought"] += r["shares_bought"]
+        b["rows"] += 1
+
+    out = []
+    for m in monthly:
+        if m["is_anchor"] or m["buyback_mxn"] is None:
+            continue
+        k = (m["date"].year, m["date"].month)
+        w = by_month.get(k)
+        if w is None:
+            log.alert(f"{m['month_label']}: the Monthly row has no weekly rows at all",
+                      code="RECON_NO_WEEKLY", affected_date=m["date"])
+            continue
+        d_mxn = w["buyback_mxn"] - m["buyback_mxn"]
+        d_sh = w["shares_bought"] - m["shares_bought"]
+        out.append({"month": m["month_label"], "date": m["date"], "weeks": w["rows"],
+                    "weekly_mxn": w["buyback_mxn"], "monthly_mxn": m["buyback_mxn"],
+                    "weekly_shares": w["shares_bought"], "monthly_shares": m["shares_bought"],
+                    "ok": d_mxn == 0 and d_sh == 0})
+        if d_mxn or d_sh:
+            log.alert(f"{m['month_label']}: weekly rows do NOT reconcile to the monthly row - "
+                      f"buyback {w['buyback_mxn']:,} vs {m['buyback_mxn']:,} "
+                      f"({d_mxn:+,} MXN), shares {w['shares_bought']:,} vs "
+                      f"{m['shares_bought']:,} ({d_sh:+,}). Neither frame was adjusted.",
+                      code="RECON_BREAK", affected_date=m["date"])
+    broken = [r for r in out if not r["ok"]]
+    if out and not broken:
+        log.info(f"weekly->monthly reconciliation: {len(out)} months, all exact")
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -290,22 +384,23 @@ def fill_empty_weeks(cfg: dict, frame: list[dict], log: RunLog) -> list[dict]:
     """
     if not frame:
         return frame
-    out: list[dict] = []
-    for i, row in enumerate(frame):
-        out.append(row)
-        if i + 1 >= len(frame):
-            break
-        # step Monday to Monday until we reach the next row's week
-        cur = row["date"] - dt.timedelta(days=row["date"].isoweekday() - 1)
-        nxt = frame[i + 1]["date"]
-        nxt_mon = nxt - dt.timedelta(days=nxt.isoweekday() - 1)
-        cur += dt.timedelta(days=7)
-        while cur < nxt_mon:
+    # Since the month-boundary split, TWO rows can share an ISO week, so the
+    # gap test is "which ISO weeks are absent", not "how far apart are
+    # consecutive rows".
+    have = {r["date"].isocalendar()[:2] for r in frame}
+    monday = lambda d: d - dt.timedelta(days=d.isoweekday() - 1)  # noqa: E731
+
+    out = list(frame)
+    cur = monday(frame[0]["date"]) + dt.timedelta(days=7)
+    last = monday(frame[-1]["date"])
+    while cur < last:
+        if cur.isocalendar()[:2] not in have:
             sunday = cur + dt.timedelta(days=6)
+            prior = max((r for r in frame if r["date"] < cur), key=lambda r: r["date"])
             out.append({
                 "date": sunday,
-                "remanente": row["remanente"],
-                "shares_outstanding": row["shares_outstanding"],
+                "remanente": prior["remanente"],
+                "shares_outstanding": prior["shares_outstanding"],
                 "source_report_date": None,
                 "pdf_url": "",
                 "program_addition": 0,
@@ -316,10 +411,14 @@ def fill_empty_weeks(cfg: dict, frame: list[dict], log: RunLog) -> list[dict]:
                 "month_label": month_label(cfg, sunday),
                 "iso_week": iso_week_label(cfg, cur),
                 "week_ending_sun": sunday,
+                "period_start": cur,
+                "period_end": sunday,
+                "month_end": False,      # no report, so it closes nothing
                 "no_report": True,
                 "is_anchor": False,
             })
-            cur += dt.timedelta(days=7)
+        cur += dt.timedelta(days=7)
+    out.sort(key=lambda r: (r["date"], r["no_report"]))
     added = len(out) - len(frame)
     if added:
         weeks = [r["iso_week"] for r in out if r["no_report"]]
@@ -550,7 +649,7 @@ def write_workbook(cfg: dict, ledger: list[dict], weekly: list[dict],
             out = []
             for c in cols:
                 v = row.get(c["key"])
-                if c["key"] == "no_report":
+                if c["key"] in ("no_report", "month_end"):
                     v = "TRUE" if v else "FALSE"
                 out.append(v)
             sh.append(out)
@@ -680,11 +779,14 @@ def build(cfg: dict, log: RunLog, probe: bool = True):
     additions = load_additions()
     check_duplicate_additions(additions, log)
 
+    # the last report of each calendar month - the report the Monthly row uses
+    month_end_dates = {r["report_date"] for r in _bucket_last(rows, month_key)}
+
     used_unconfirmed: dict = {}
-    weekly = build_frame(_bucket_last(rows, lambda d: d.isocalendar()[:2]),
-                         additions, cfg, log, probe, used_unconfirmed)
-    monthly = build_frame(_bucket_last(rows, lambda d: (d.year, d.month)),
-                          additions, cfg, log, probe, used_unconfirmed)
+    weekly = build_frame(_bucket_last(rows, week_key),
+                         additions, cfg, log, probe, used_unconfirmed, month_end_dates)
+    monthly = build_frame(_bucket_last(rows, month_key),
+                          additions, cfg, log, probe, used_unconfirmed, month_end_dates)
 
     fill = cfg["series"].get("fill_empty_periods") or {}
     if fill.get("weekly"):
@@ -696,6 +798,9 @@ def build(cfg: dict, log: RunLog, probe: bool = True):
     # reduction in hidden history is still caught
     check_implied_price_band(cfg, weekly, "weekly", log)
     check_implied_price_band(cfg, monthly, "monthly", log)
+
+    # the weekly rows must sum to the monthly ones, every month, exactly
+    reconcile_weekly_to_monthly(weekly, monthly, log)
 
     # Ruling 1: ONE line per unconfirmed addition per run - an INFO notice,
     # not a repeated ALERT. It stays visible until the owner confirms it

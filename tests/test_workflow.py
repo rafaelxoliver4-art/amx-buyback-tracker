@@ -12,6 +12,7 @@ Two things these tests exist to prevent:
 
 from __future__ import annotations
 
+import datetime as dt
 import io
 import re
 import sys
@@ -52,10 +53,19 @@ def test_workflow_cron_matches_schedule_config():
         "these are duplicated by necessity and must be kept in step")
 
 
-def test_schedule_is_saturday_noon_utc():
+def test_schedule_is_friday_2200_sao_paulo():
+    """01:00 UTC Saturday IS 22:00 Friday in Sao Paulo (UTC-3, no DST)."""
     minute, hour, dom, month, dow = SCFG["cron"].split()
-    assert (minute, hour) == ("0", "12")
+    assert (minute, hour) == ("0", "1")
     assert dow == "6" and dom == "*" and month == "*"
+    run_utc = dt.datetime(2026, 8, 8, int(hour), int(minute), tzinfo=dt.timezone.utc)
+    assert run_utc.weekday() == 5, "cron day 6 must be Saturday in UTC"
+    sao = run_utc - dt.timedelta(hours=3)
+    assert (sao.weekday(), sao.hour) == (4, 22), \
+        f"expected Friday 22:00 Sao Paulo, got {sao:%A %H:%M}"
+    # and comfortably after the latest observed BMV filing, 17:59 Mexico City
+    latest_filing_utc = dt.datetime(2026, 8, 7, 23, 59, tzinfo=dt.timezone.utc)
+    assert run_utc > latest_filing_utc
 
 
 def test_schedule_is_enabled():

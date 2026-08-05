@@ -9,27 +9,48 @@
 
 enabled: true
 
-cron: "0 12 * * 6"          # Saturdays 12:00 UTC
+cron: "0 1 * * 6"           # Saturday 01:00 UTC == FRIDAY 22:00 Sao Paulo
 
-# WHY SATURDAY 12:00 UTC
+# WHY 01:00 UTC SATURDAY (2026-08-05: moved from 12:00 UTC at the owner's
+# request, so the mail lands on Friday evening rather than Saturday morning)
 #
-#   - GitHub cron is ALWAYS UTC. It does not observe any local timezone.
-#   - BMV files each day's recompras report ~17:30 in Mexico City.
-#   - Mexico City is UTC-6 year round: Mexico abolished DST in October 2022,
-#     so there is no seasonal drift to design around.
-#   - Friday's report is therefore public by ~23:30 UTC on Friday.
-#   - Saturday 12:00 UTC is ~12.5 hours later - and 09:00 in Sao Paulo, where
-#     the owner reads it. Comfortably clear of the filing, with a wide margin
-#     for a late filing or a slow BMV.
+# THE ARITHMETIC, written out - both zones are fixed, neither observes DST:
+#
+#   Mexico City  UTC-6  (DST abolished October 2022)
+#   Sao Paulo    UTC-3  (DST abolished 2019)
+#   => Mexico City is 3 hours BEHIND Sao Paulo.
+#
+#   BMV files      16:39-17:59  Mexico City   (the observed range, 343 reports)
+#                = 19:39-20:59  Sao Paulo
+#                = 22:39-23:59  UTC, Friday
+#
+#   The run at    01:00 UTC Saturday
+#                = 22:00 Friday, Sao Paulo   <- when the owner reads it
+#                = 19:00 Friday, Mexico City
+#
+#   That is ~1 hour after the LATEST filing ever observed (23:59 UTC).
+#
+# WHY A ~1 HOUR BUFFER IS ACCEPTABLE
+#
+# The fetcher selects by WALKING THE LISTING, not by asking for "today", and
+# the ledger is APPEND-ONLY. So a report that is late, or missed entirely, is
+# simply picked up by the following week's run and appended then. A late
+# filing costs FRESHNESS for one week; it can never cost DATA, and it can
+# never produce a wrong figure - the acceptance gate would catch that.
+#
+# If more clearance is ever wanted, change the hour in TWO places -
+# this file and .github/workflows/weekly.yml - and the test that asserts they
+# agree will hold the pair together. That is the whole fix.
 #
 # GitHub also queues scheduled jobs under load and may start them minutes
-# late; on a 12-hour margin that is immaterial.
+# late, which eats into a 1-hour buffer more than it did a 12-hour one. Same
+# consequence: a week's freshness, never data.
 
 run:
   cadence: weekly
-  day_of_week: "saturday"
-  time_utc: "12:00"
-  owner_local_time: "09:00 America/Sao_Paulo"
+  day_of_week: "saturday"           # in UTC; Friday evening in Sao Paulo
+  time_utc: "01:00"
+  owner_local_time: "22:00 Friday America/Sao_Paulo"
 
 publication:
   typical_time_local: "17:30"

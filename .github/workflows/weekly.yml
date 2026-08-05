@@ -5,10 +5,18 @@
 # the schedule has to be a literal here. tests/test_workflow.py asserts this
 # cron and config/schedule.yaml's agree, so they can never drift apart.
 #
-# "0 12 * * 6" = Saturdays 12:00 UTC. GitHub cron is ALWAYS UTC. BMV files
-# ~17:30 in Mexico City (UTC-6 year round - Mexico abolished DST in 2022), so
-# Friday's report is public by ~23:30 UTC Friday. Saturday noon UTC is ~12.5h
-# later, and 09:00 in Sao Paulo where the owner reads it.
+# "0 1 * * 6" = Saturday 01:00 UTC, which is FRIDAY 22:00 in Sao Paulo, where
+# the owner reads it. GitHub cron is ALWAYS UTC.
+#
+# Mexico City is UTC-6 (no DST since 2022), Sao Paulo UTC-3 (none since 2019),
+# so Mexico is 3 hours BEHIND Brazil. BMV files 16:39-17:59 Mexico City =
+# 19:39-20:59 Sao Paulo = 22:39-23:59 UTC Friday. The run is ~1 hour after the
+# latest filing ever observed.
+#
+# That buffer is tight on purpose and is safe: the fetcher walks the listing
+# rather than asking for "today", and the ledger is append-only, so a late or
+# missed report is picked up by the next run. A late filing costs a week's
+# freshness, never data.
 #
 # SECRETS ARE REFERENCED BY NAME ONLY. Their values are injected by GitHub
 # into the email step's environment and are never printed, logged or
@@ -18,7 +26,7 @@ name: Weekly AMX buyback run
 
 on:
   schedule:
-    - cron: "0 12 * * 6"
+    - cron: "0 1 * * 6"
   workflow_dispatch:
 
 permissions:
