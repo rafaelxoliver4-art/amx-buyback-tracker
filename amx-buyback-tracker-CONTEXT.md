@@ -656,11 +656,30 @@ anything.
 
 ### 10.2 What runs, and when
 
-`.github/workflows/weekly.yml`, **`0 1 * * 6` — Saturday 01:00 UTC, which is
-FRIDAY 22:00 in São Paulo**, plus `workflow_dispatch` for a manual run.
+`.github/workflows/weekly.yml`, **`17 1 * * 6` — Saturday 01:17 UTC, which is
+FRIDAY 22:17 in São Paulo**, plus `workflow_dispatch` for a manual run.
 Nothing else triggers it — no push trigger, no pull-request trigger, no second
 schedule. *(Moved from Saturday 12:00 UTC on 2026-08-05 so the mail lands on
-Friday evening.)*
+Friday evening, then off the hour the same day — see below.)*
+
+**Two things a scheduled workflow silently depends on:**
+
+- **It only runs from the DEFAULT branch.** A workflow that exists only
+  locally, or only on a side branch, never fires and gives no warning. The
+  default branch here is `main`, and the workflow is on it.
+- **The minute is `:17` on purpose. Do not tidy it back to `:00`.** GitHub
+  delays or drops scheduled runs when the Actions queue is busy, and the top
+  of the hour is the worst slot — it is the default everybody writes, so every
+  `:00` cron competes for runners at the same instant. 17 minutes of latency
+  is imperceptible weekly; a dropped run is a missed email, and a missed email
+  looks exactly like a dead job. A test fails if the minute returns to `0`, or
+  if either file stops saying why.
+
+**GitHub does not publish a next-scheduled-run time.** Neither
+`/actions/workflows`, `/actions/workflows/{id}`, `…/timing` nor the GraphQL
+`Workflow` type exposes one — the Actions UI shows a hint, the API does not.
+Any "next run" figure in this project is therefore **computed from the cron**,
+never quoted from GitHub.
 
 The cron is **duplicated** in the workflow and in `config/schedule.yaml`,
 because Actions cannot read our config. `tests/test_workflow.py` asserts the

@@ -29,8 +29,9 @@ standing brief.
 
 | | |
 |---|---|
-| Workflow | `Weekly AMX buyback run`, id 328050218, **active** |
-| Next run | **Friday 07 August 2026, 22:00 São Paulo** = Sat 08 Aug 01:00 UTC |
+| Workflow | `Weekly AMX buyback run`, id 328050218, **active**, on the default branch `main` |
+| Next run | **Friday 07 August 2026, 22:17 São Paulo** = Sat 08 Aug 01:17 UTC |
+| Schedule status | **UNPROVEN — 0 cron-triggered runs so far.** All runs to date were manual. Proven only when Friday's email arrives. |
 | Gate | ran at 18:27:03 and passed, **before** commit (18:27:03→04) and email (18:27:04→07) |
 | Action commit | [`9a4ec81`](https://github.com/rafaelxoliver4-art/amx-buyback-tracker/commit/9a4ec81) — ledger **+1/−0** |
 | Email | **arrived in the INBOX**, not spam, 18:27:06Z |
@@ -75,6 +76,100 @@ stands, and the PDFs stay committed.
 
 **Nothing moved.** Both acceptance fixtures are byte-identical to Cycle 1 and
 every workbook cell is unchanged.
+
+---
+
+## Cycle 5 — 2026-08-05 — proving the SCHEDULE, and moving it off the hour
+
+### Handed off
+
+Every green run so far was manual. Verify the cron can actually fire, and move
+it off the top of the hour.
+
+### The headline finding
+
+> **The schedule is still UNPROVEN. Zero cron-triggered runs have ever
+> completed** — `actions/runs?event=schedule` returns `total_count: 0`. All
+> three successful runs were `workflow_dispatch`.
+>
+> **It stops being unproven on Friday 07 August, not before.** Everything
+> below shows the schedule *can* fire; none of it shows that it *did*.
+
+### Everything that could be checked, checks out
+
+| Check | Result |
+|---|---|
+| Default branch | **`main`** — and `main` is the only branch |
+| Workflow on the default branch | **yes**, `.github/workflows/weekly.yml`, 6,347 bytes |
+| Cron on that branch | was `0 1 * * 6`, now **`17 1 * * 6`** |
+| Workflow state | **`active`** |
+| Repo-level Actions | **`enabled: true`**, `allowed_actions: all` |
+| Unpushed local commits | **0** — local HEAD == origin/main |
+| Skipped / queued / disabled runs | **none** — 3 runs, all `completed / success` |
+
+Scheduled workflows run **only from the default branch**, so this mattered: a
+workflow that exists only locally, or only on a side branch, silently never
+fires. It is on `main`, and `main` is the default.
+
+### GitHub does not publish a "next scheduled run" time
+
+**Step 1e could not be satisfied as written, and I am not going to substitute
+my own arithmetic and call it GitHub's.** Checked:
+
+- `GET /repos/…/actions/workflows` → fields are `badge_url, created_at,
+  html_url, id, name, node_id, path, state, updated_at, url`. No next-run.
+- `GET /repos/…/actions/workflows/{id}` → identical field set.
+- `…/timing` → `{"billable":{}}`, a billing endpoint.
+- GraphQL `Workflow` type → `createdAt, databaseId, id, name, resourcePath,
+  runs, state, updatedAt, url`. No next-run.
+
+**Neither REST nor GraphQL exposes it.** GitHub shows a next-run hint in the
+Actions UI only, and does not commit to it in the API. So the honest statement
+is: from the cron, the next fire *should* be Saturday 08 Aug 01:17 UTC =
+**Friday 07 Aug 22:17 São Paulo** — computed by me, not asserted by GitHub.
+
+### The cron moved off the hour
+
+`0 1 * * 6` → **`17 1 * * 6`** — Friday **22:17** São Paulo.
+
+GitHub delays or drops scheduled runs when the Actions queue is busy, and
+**:00 is the single worst slot**: it is the default everybody writes, so every
+top-of-hour cron in the world competes for runners at the same instant. 17
+minutes of latency is imperceptible in a weekly job; a dropped run is a missed
+email, and a missed email looks exactly like a dead job.
+
+The reason is written into **both** files so nobody tidies it back, and a new
+test fails if the minute returns to `0` **or** if either file stops explaining
+why. The existing test pinning the two crons together still passes, as does
+the one resolving the cron to São Paulo time — now to 22:17.
+
+### The Cycle 4 email fix did ship — verified in the delivered message
+
+Read back out of Gmail (message `19fd42ab45a0c08e`, 23:03:13Z, **INBOX**), not
+from the local preview:
+
+| | |
+|---|---|
+| YTD header | `border-bottom:1px solid #4A3F35;font-weight:bold` — **bold and rule both restored** |
+| Remaining resources | **16,802,530,840** with **−237,578,757** in `#C00000` |
+| Shares outstanding | **59,982,000,000** with **−11,000,000** |
+| Source link | `…/recompra/recompra_1579878_1.pdf` |
+| Section order | report date → balances → derived headline → chart (cid) → YTD → 5 quiet notices → footer |
+| Attachments | inline chart, `AMX_Buybacks.xlsx`, `amx_buybacks_chart.png` |
+
+The link was verified by identity rather than by fetching it: the emailed URL
+is exactly the `pdf_url` stored for 2026-08-04, and the sha256 of the PDF on
+disk matches the ledger's — so the URL is byte-for-byte the report that row
+was parsed from, and the runner fetched that same URL at 22:58 UTC. **Local
+DNS is blocked in this sandbox**, so no live re-fetch was possible from here;
+the runner's download is the live proof.
+
+### Next
+
+**Friday 07 August, 22:17 São Paulo.** If the email arrives, the schedule is
+proven and this project is finished. If it does not, the first things to check
+are the Actions tab for a disabled workflow and the run list for a dropped
+scheduled run.
 
 ---
 

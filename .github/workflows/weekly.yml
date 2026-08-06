@@ -5,8 +5,13 @@
 # the schedule has to be a literal here. tests/test_workflow.py asserts this
 # cron and config/schedule.yaml's agree, so they can never drift apart.
 #
-# "0 1 * * 6" = Saturday 01:00 UTC, which is FRIDAY 22:00 in Sao Paulo, where
+# "17 1 * * 6" = Saturday 01:17 UTC, which is FRIDAY 22:17 in Sao Paulo, where
 # the owner reads it. GitHub cron is ALWAYS UTC.
+#
+# THE :17 IS DELIBERATE - do not "tidy" it back to :00. GitHub delays or drops
+# scheduled runs when the Actions queue is busy, and the top of the hour is
+# the worst slot because it is the default everybody writes. 17 minutes of
+# latency is imperceptible in a weekly job; a dropped run is a missed email.
 #
 # Mexico City is UTC-6 (no DST since 2022), Sao Paulo UTC-3 (none since 2019),
 # so Mexico is 3 hours BEHIND Brazil. BMV files 16:39-17:59 Mexico City =
@@ -26,7 +31,7 @@ name: Weekly AMX buyback run
 
 on:
   schedule:
-    - cron: "0 1 * * 6"
+    - cron: "17 1 * * 6"
   workflow_dispatch:
 
 permissions:

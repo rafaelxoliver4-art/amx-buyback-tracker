@@ -53,19 +53,32 @@ def test_workflow_cron_matches_schedule_config():
         "these are duplicated by necessity and must be kept in step")
 
 
-def test_schedule_is_friday_2200_sao_paulo():
-    """01:00 UTC Saturday IS 22:00 Friday in Sao Paulo (UTC-3, no DST)."""
+def test_schedule_is_friday_evening_sao_paulo():
+    """01:17 UTC Saturday IS 22:17 Friday in Sao Paulo (UTC-3, no DST)."""
     minute, hour, dom, month, dow = SCFG["cron"].split()
-    assert (minute, hour) == ("0", "1")
+    assert (minute, hour) == ("17", "1")
     assert dow == "6" and dom == "*" and month == "*"
     run_utc = dt.datetime(2026, 8, 8, int(hour), int(minute), tzinfo=dt.timezone.utc)
     assert run_utc.weekday() == 5, "cron day 6 must be Saturday in UTC"
     sao = run_utc - dt.timedelta(hours=3)
-    assert (sao.weekday(), sao.hour) == (4, 22), \
-        f"expected Friday 22:00 Sao Paulo, got {sao:%A %H:%M}"
+    assert (sao.weekday(), sao.hour, sao.minute) == (4, 22, 17), \
+        f"expected Friday 22:17 Sao Paulo, got {sao:%A %H:%M}"
     # and comfortably after the latest observed BMV filing, 17:59 Mexico City
     latest_filing_utc = dt.datetime(2026, 8, 7, 23, 59, tzinfo=dt.timezone.utc)
     assert run_utc > latest_filing_utc
+
+
+def test_cron_is_deliberately_off_the_hour():
+    """GitHub delays or drops scheduled runs under load and :00 is the busiest
+    slot. Guard against someone 'tidying' the offset away."""
+    minute = SCFG["cron"].split()[0]
+    assert minute != "0", \
+        "the cron is back on the hour - :00 is the most-contended slot on GitHub"
+    assert 1 <= int(minute) <= 59
+    for path in (WORKFLOW, REPO_ROOT / "config" / "schedule.yaml"):
+        text = path.read_text(encoding="utf-8").lower()
+        assert "tidy" in text or "top of the hour" in text, \
+            f"{path.name} does not say WHY the offset exists"
 
 
 def test_schedule_is_enabled():
