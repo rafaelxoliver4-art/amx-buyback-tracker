@@ -14,11 +14,11 @@ standing brief.
 
 | | |
 |---|---|
-| Cycles complete | **0** recon · **1** backfill/chart · **2** nine rulings + first push · **3** Actions + email **LIVE** · **4** source balances, month-closing weeks, Fri 22:00 |
+| Cycles complete | **0** recon · **1** backfill/chart · **2** nine rulings + first push · **3** Actions + email **LIVE** · **4** source balances, month-closing weeks · **5** schedule checks, cron off the hour |
 | Ledger | **538 rows**, append-only, serie B from 2023-03-17 |
-| PDFs held | 343, all parsed, **0 unparsed** |
+| PDFs held | 344, all parsed, **0 unparsed** |
 | Acceptance test | **2026 fixture PASS · full-history fixture PASS (32/32 rows)** |
-| Test suite | **78 passed** |
+| Test suite | **79 passed** |
 | Deliverables | `output/AMX_Buybacks.xlsx` (6 sheets), `output/amx_buybacks_chart.png`, `output/email_preview.html` |
 
 ### ✅ LIVE — the weekly job is running and proven

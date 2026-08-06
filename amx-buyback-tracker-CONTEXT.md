@@ -3,8 +3,8 @@
 The standing brief for this project. **Bar: someone reading only this file
 could rebuild the repo from scratch.** Read this before changing anything.
 
-**Current as of 2026-08-05.** Cycles 0–3 complete; both acceptance fixtures
-pass and 70 tests pass. Published to a **private** GitHub repo,
+**Current as of 2026-08-05.** Cycles 0–5 complete; both acceptance fixtures
+pass and **79 tests** pass. Published to a **private** GitHub repo,
 <https://github.com/rafaelxoliver4-art/amx-buyback-tracker>.
 
 **All nine rulings are now settled** — see §11. Two were reversals: the full
@@ -857,7 +857,13 @@ their names, and the run log shows the secret only as `***`.
 - **The secret never reached the log.** Searched by format pattern, since the
   value is not known to anything but GitHub and Gmail.
 
-**Next run: Saturday 08 August 2026, 12:00 UTC** (09:00 São Paulo).
+**Next run: Friday 07 August 2026, 22:17 São Paulo** (Sat 08 Aug, 01:17 UTC).
+
+> **The SCHEDULE itself is still unproven.** Every run so far has been a
+> manual `workflow_dispatch` — `actions/runs?event=schedule` returns
+> `total_count: 0`. All the preconditions check out (§10.2), but a cron that
+> has never fired is a cron that has never fired. It is proven when Friday's
+> email arrives, and not before.
 
 ## 11. Decisions log
 
