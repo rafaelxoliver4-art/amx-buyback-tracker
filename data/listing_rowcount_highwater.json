@@ -1,5 +1,5 @@
 {
-  "max_rows": 1255,
-  "recorded_at_utc": "2026-08-05T17:20:29+00:00",
+  "max_rows": 1256,
+  "recorded_at_utc": "2026-08-08T03:01:35+00:00",
   "note": "Highest listing row count ever seen. Ratchet: raised by a new high, never lowered by a shrink. Committed so the guard survives a fresh clone."
 }
