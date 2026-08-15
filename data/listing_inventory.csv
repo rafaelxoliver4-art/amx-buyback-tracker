@@ -1,9 +1,4 @@
 report_date,published_at,asunto,pdf_url,doc_id
-2021-08-09,2021-08-09T16:58,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1120558_1.pdf,1120558
-2021-08-10,2021-08-10T16:50,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1120849_1.pdf,1120849
-2021-08-11,2021-08-11T16:32,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1121088_1.pdf,1121088
-2021-08-12,2021-08-12T17:15,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1121373_1.pdf,1121373
-2021-08-13,2021-08-13T17:31,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1121661_1.pdf,1121661
 2021-08-16,2021-08-16T17:43,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1121963_1.pdf,1121963
 2021-08-17,2021-08-17T16:52,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1122196_1.pdf,1122196
 2021-08-18,2021-08-18T16:45,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1122447_1.pdf,1122447
@@ -1255,3 +1250,8 @@ report_date,published_at,asunto,pdf_url,doc_id
 2026-08-05,2026-08-05T17:13,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1580281_1.pdf,1580281
 2026-08-06,2026-08-06T17:50,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1580722_1.pdf,1580722
 2026-08-07,2026-08-07T17:15,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1581051_1.pdf,1581051
+2026-08-10,2026-08-10T17:38,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1581263_1.pdf,1581263
+2026-08-11,2026-08-11T17:35,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1581579_1.pdf,1581579
+2026-08-12,2026-08-12T16:54,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1581933_1.pdf,1581933
+2026-08-13,2026-08-13T17:02,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1582215_1.pdf,1582215
+2026-08-14,2026-08-14T17:20,Recompras,https://www.bmv.com.mx/docs-pub/recompra/recompra_1582524_1.pdf,1582524
